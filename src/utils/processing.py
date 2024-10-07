@@ -1,6 +1,9 @@
 import numpy as np
 import pandas as pd
 from scipy.stats import sem
+import matplotlib
+matplotlib.use('Agg')  # Use a non-interactive backend
+
 import matplotlib.pyplot as plt
 from pathlib import Path
 

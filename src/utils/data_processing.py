@@ -1,6 +1,9 @@
 import os
 import numpy as np
 import matplotlib.pyplot as plt
+import matplotlib
+matplotlib.use('Agg')  # Use a non-interactive backend
+
 import logging
 from src.data.data_loader import load_arteriole_data, load_calcium_data, load_pupil_data, load_whisker_data
 from src.utils.utilities import (
