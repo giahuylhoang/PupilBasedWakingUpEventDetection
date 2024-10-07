@@ -41,7 +41,10 @@ def run_batch(root_folder=None, list_of_folders=None, default_result_path=None,
 
                 # Construct the results folder path
                 base_folder = os.path.join(*folder.split(os.sep)[-2:])  # This will give "2023.06.01/cycle_8"
+                print("Basefolder ", base_folder)
+                logging.info(f"Basefolder: {base_folder}")
                 results_folder = os.path.join(default_result_path, base_folder)
+                logging.info(f"Results folder: {results_folder}")
 
                 # Ensure the results directory exists
                 os.makedirs(results_folder, exist_ok=True)

@@ -19,11 +19,9 @@ logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(
 def process_data(data_folder_path, threshold_to_exclude_from_min_max=1, threshold_to_exclude_base_on_pupil=2, plot_traces=False, save_trace_plot=True, clear_output=True, bsline_length=5, event_length=15, results_folder=None):
     try:
         if results_folder is None:
-            results_path = data_folder_path.replace('test', 'results')
-            results_path = data_folder_path.replace('data', 'results')
-        else:
-            results_path = data_folder_path.replace('test', results_folder)
-            results_path = data_folder_path.replace('data', results_folder)
+            raise ValueError("results_folder must be provided")
+      
+        results_path = results_folder
         os.makedirs(results_path, exist_ok=True)
 
         logging.info(f"Processing data for folder: {data_folder_path}")
