@@ -5,14 +5,15 @@ source ./init.sh
 
 
 # Please input the data path here
-DATA_FOLDER_PATH="data/test/cycle_8"
-RESULTS_FOLDER="data/test/results/cycle_8"
+DATA_FOLDER_PATH="data/test/2023.05.07/cycle 6"
+RESULTS_FOLDER="data/test/2023.05.07/cycle 6"
 
 # Default values for optional arguments
 BSLINE_LENGTH=5 # Baseline length in seconds before the event
-EVENT_LENGTH=15 # Event length in seconds after the event
-RESULTS_FOLDER="data/test/cycle_8" # Path to save results; if empty, a default path will be used
+EVENT_LENGTH=5 # Event length in seconds after the event
+# RESULTS_FOLDER="data/test/2023.05.07/cycle 5" # Path to save results; if empty, a default path will be used
 THRESHOLD_TO_EXCLUDE_FROM_MIN_MAX=1 # Percentile threshold for outlier exclusion in min/max calculations
+THRESHOLD_MID_LINE=0.5
 # Example: If set to 1, values outside 1st-99th percentiles are excluded
 
 THRESHOLD_TO_EXCLUDE_BASE_ON_PUPIL=2 # Threshold for excluding events based on pupil trace outliers
@@ -22,13 +23,15 @@ THRESHOLD_TO_EXCLUDE_BASE_ON_PUPIL=2 # Threshold for excluding events based on p
 PLOT_TRACES=true # Whether to generate plots of the traces
 SAVE_TRACE_PLOT=true # Whether to save the generated trace plots
 CLEAR_OUTPUT=false # Whether to clear output after processing (useful in interactive environments)
+WAKE_UP=false # If sleep-to-wake transition detection, set it to False, otherwise,if wake-to-sleep transition detection, set it to True
 
 
 # Function to display help message
 usage() {
     echo "Usage: $0 -d <data_folder_path> [-r <results_folder>] [--threshold_min_max <value>] [--threshold_pupil <value>]"
     echo "          [--plot_traces <true|false>] [--save_trace_plot <true|false>] [--clear_output <true|false>]"
-    echo "          [--bsline_length <value>] [--event_length <value>]"
+    echo "          [--bsline_length <value>] [--event_length <value>]" 
+    echo "          [--wake_up <true|false>]"
     exit 1
 }
 
@@ -44,6 +47,7 @@ while [[ "$#" -gt 0 ]]; do
         --clear_output) CLEAR_OUTPUT="$2"; shift ;;
         --bsline_length) BSLINE_LENGTH="$2"; shift ;;
         --event_length) EVENT_LENGTH="$2"; shift ;;
+        --wake_up) WAKE_UP="$2"; shift ;;
         *) usage ;;
     esac
     shift
@@ -64,4 +68,5 @@ python scripts/run_individual.py "$DATA_FOLDER_PATH" \
     --save_trace_plot "$SAVE_TRACE_PLOT" \
     --clear_output "$CLEAR_OUTPUT" \
     --bsline_length "$BSLINE_LENGTH" \
-    --event_length "$EVENT_LENGTH"
+    --event_length "$EVENT_LENGTH" \
+    --wake_up "$WAKE_UP"

@@ -45,11 +45,15 @@ def normalize_mean_std(df):
 def moving_average(data, window_size):
     return np.convolve(data, np.ones(window_size) / window_size, mode='valid') if window_size != 0 else data
 
-def normalize_series(series, threshold=1):
+def normalize_series(series, threshold=1, without_min=False):
     min_val = np.percentile(series, threshold)
-    max_val = np.percentile(series, 100 - threshold)
-    return (series - min_val) / (max_val - min_val)
-
+    max_val = np.max(series)
+    print("Max Value", max_val);
+    if without_min == True:
+        return series.copy() / max_val
+    else:
+        return (series.copy() - min_val) / (max_val - min_val)
+    
 def change_shape(df, time_dim):
     whisker_shape = df[0].shape[0]
     diff_shape = time_dim - whisker_shape
@@ -135,7 +139,7 @@ def check_cross_midline(segment, midline=0.5):
     crosses = np.any(np.diff(above.astype(int)) != 0) or np.any(np.diff(below.astype(int)) != 0)
     return crosses
 
-def calculate_properties_possible_events(block, signal, time, step=0.25, baseline_window=5, event_window=15):
+def calculate_properties_possible_events(block, signal, time, step=0.25, baseline_window=5, event_window=15, wakeup=True):
     start_idx, end_idx = block
     time_segment = time[start_idx:end_idx]
     time_step = np.mean(np.diff(time_segment))
@@ -147,29 +151,62 @@ def calculate_properties_possible_events(block, signal, time, step=0.25, baselin
     event_properties = []
 
     event_indices = np.arange(0, pupil_segment.shape[0], step_size)
-    event_indices = event_indices[pupil_segment[event_indices] < threshold]
+
+    print("Event Indices:", event_indices)
+    if wakeup:
+        event_indices = event_indices[pupil_segment[event_indices] < threshold]
+    else:
+        event_indices = event_indices[pupil_segment[event_indices] < threshold]
 
     for idx in event_indices:
         baseline_values = signal[start_idx + idx - baseline_size:start_idx + idx]
+        baseline_top_values = signal[start_idx + idx - baseline_size:(start_idx + idx - int(baseline_size*2/3))]
         if start_idx + idx + event_size > signal.shape[0]:
             continue
         event_values = signal[start_idx + idx:start_idx + idx + event_size]
-        downward_values = signal[start_idx + idx:start_idx + idx + int(event_size / 3)]
+        event_bottom_values = signal[start_idx + idx + int(event_size*2/3):start_idx + idx + event_size]
+
+        if wakeup:
+            downward_values = signal[start_idx + idx:start_idx + idx + int(event_size / 3)]
+        else:
+            upward_values = signal[start_idx + idx:start_idx + idx + int(event_size / 3)]
 
         baseline_mean = np.mean(baseline_values)
         baseline_std = np.std(baseline_values)
+        baseline_top_mean = np.mean(baseline_top_values)
+        baseline_top_std = np.std(baseline_top_values)
+
         event_mean = np.mean(event_values)
         event_std = np.std(event_values)
+        event_bottom_mean = np.mean(event_bottom_values)
+        event_bottom_std = np.std(event_bottom_values)
+        
+        # Calculate the differences between consecutive values in the downward_values segment
+        if wakeup == True:
+            diffs = np.diff(downward_values)
+            # Count the number of downward movements (where the difference is negative)
+            num_downward_movements = np.sum(diffs < 0)
+            # Sum the total magnitude of all downward movements
+            total_downward_magnitude = np.sum(diffs[diffs < 0])
 
-        diffs = np.diff(downward_values)
-        num_downward_movements = np.sum(diffs < 0)
-        total_downward_magnitude = np.sum(diffs[diffs < 0])
+            event_properties.append((
+                idx, baseline_mean, baseline_std, event_mean, event_std,
+                num_downward_movements, total_downward_magnitude, baseline_top_mean, baseline_top_std,
+                event_bottom_mean, event_bottom_std
+            ))
+        else:
+            diffs = np.diff(upward_values)
+            # Count the number of upward movements (where the difference is positive)
+            num_upward_movements = np.sum(diffs > 0)
+            # Sum the total magnitude of all upward movements
+            total_upward_magnitude = np.sum(diffs[diffs > 0])
 
-        event_properties.append((
-            idx, baseline_mean, baseline_std, event_mean, event_std,
-            num_downward_movements, total_downward_magnitude
-        ))
-
+            event_properties.append((
+                idx, baseline_mean, baseline_std, event_mean, event_std,
+                num_upward_movements, total_upward_magnitude, baseline_top_mean, baseline_top_std,
+                event_bottom_mean, event_bottom_std
+            ))
+        
     return event_properties
 
 def calculate_derivative(arr, times):

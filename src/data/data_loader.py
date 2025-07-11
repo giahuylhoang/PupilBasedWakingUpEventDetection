@@ -24,8 +24,15 @@ def load_pupil_data(data_folder_path):
     return pupil_size_df
 
 def load_whisker_data(data_folder_path):
-    resampled_whisker_angle_df = pd.read_csv(os.path.join(data_folder_path, 'resampled_whiskerAngle.csv'), header=None)
+    # Find the first file with 'whisker' in its name and ends with .csv
+    for file in os.listdir(data_folder_path):
+        if 'whisker' in file and file.endswith('.csv'):
+            whisker_file_path = os.path.join(data_folder_path, file)
+            break
+    print(f"Loading whisker data from: {whisker_file_path}")
+    resampled_whisker_angle_df = pd.read_csv(whisker_file_path, header=None)
     resampled_whisker_angle_df.dropna(inplace=True)
     resampled_whisker_angle_df['time'] = np.linspace(0, 900, resampled_whisker_angle_df[0].shape[0])
     resampled_whisker_angle_df.columns = ['whisker_angle', 'time']
+
     return resampled_whisker_angle_df

@@ -16,7 +16,7 @@ from src.utils.event_detection import detect_events
 # Configure logging
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 
-def process_data(data_folder_path, threshold_to_exclude_from_min_max=1, threshold_to_exclude_base_on_pupil=2, plot_traces=False, save_trace_plot=True, clear_output=True, bsline_length=5, event_length=15, results_folder=None):
+def process_data(data_folder_path, threshold_to_exclude_from_min_max=1, threshold_to_exclude_base_on_pupil=2, plot_traces=False, save_trace_plot=True, clear_output=True, bsline_length=5, event_length=15, results_folder=None, wakeup=False):
     try:
         if results_folder is None:
             raise ValueError("results_folder must be provided")
@@ -65,7 +65,7 @@ def process_data(data_folder_path, threshold_to_exclude_from_min_max=1, threshol
         normalized_whisker_velocity = normalize_series(np.power(calculate_derivative(whisker_angle, whisker_time), 2))
         whisker_velocity_time = whisker_time[:-1]
 
-        waking_up_events = detect_events(normalized_smoothed_pupil_size, smoothed_time_series, normalized_whisker_velocity, whisker_velocity_time, pupil_sampling_rate, whisker_sampling_rate, bsline_length, event_length)
+        waking_up_events = detect_events(normalized_smoothed_pupil_size, smoothed_time_series, normalized_whisker_velocity, whisker_velocity_time, pupil_sampling_rate, whisker_sampling_rate, bsline_length, event_length, wakeup=wakeup)
 
         # Process and save data
         logging.info("Processing and saving pupil data")

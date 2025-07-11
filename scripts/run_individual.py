@@ -19,7 +19,7 @@ logging.basicConfig(
 
 def run_individual(data_folder_path, results_folder=None, threshold_to_exclude_from_min_max=1,
                    threshold_to_exclude_base_on_pupil=2, plot_traces=True, save_trace_plot=True,
-                   clear_output=False, bsline_length=5, event_length=15):
+                   clear_output=False, bsline_length=5, event_length=15, wakeup=False):
     try:
         logging.info("Starting individual data processing")
 
@@ -42,7 +42,8 @@ def run_individual(data_folder_path, results_folder=None, threshold_to_exclude_f
             clear_output=clear_output,
             bsline_length=bsline_length,
             event_length=event_length,
-            results_folder=results_folder
+            results_folder=results_folder,
+            wakeup=wakeup
         )
 
         logging.info("Individual data processing completed successfully")
@@ -63,19 +64,24 @@ if __name__ == "__main__":
     parser.add_argument('--clear_output', type=bool, default=False, help='Whether to clear output')
     parser.add_argument('--bsline_length', type=int, default=5, help='Baseline length')
     parser.add_argument('--event_length', type=int, default=15, help='Event length')
+    parser.add_argument('--wake_up', type=bool, default=False, help='sleep-to-wake or wake-to-sleep event detection')
 
     # Parse arguments
     args = parser.parse_args()
 
+    print(args.wake_up)
+    input("Press Enter to continue...")
+
     # Run the individual processing with the provided arguments
     run_individual(
-        args.data_folder_path,
-        args.results_folder,
-        args.threshold_to_exclude_from_min_max,
-        args.threshold_to_exclude_base_on_pupil,
-        args.plot_traces,
-        args.save_trace_plot,
-        args.clear_output,
-        args.bsline_length,
-        args.event_length
+        data_folder_path=args.data_folder_path, 
+        results_folder=args.results_folder, 
+        threshold_to_exclude_from_min_max=args.threshold_to_exclude_from_min_max,
+        threshold_to_exclude_base_on_pupil=args.threshold_to_exclude_base_on_pupil,
+        plot_traces=args.plot_traces,
+        save_trace_plot=args.save_trace_plot,
+        clear_output=args.clear_output, 
+        bsline_length=args.bsline_length, 
+        event_length=args.event_length, 
+        wakeup=False
     )

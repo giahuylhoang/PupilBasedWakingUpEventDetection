@@ -1,11 +1,15 @@
 import matplotlib.pyplot as plt
+import matplotlib
+matplotlib.use('TkAgg')  # Use a non-interactive backend for saving plots
 from ipywidgets import interact, FloatSlider
 import numpy as np
 from src.utils.utilities import (detect_sudden_change_events, calculate_properties_possible_events)
 
+
 def plot_data(data):
     plt.plot(data)
     plt.show()
+
 
 def plot_detected_events(window_size, pre_event_window, pupil_diameter, pupil_times, event_window, threshold, step, pupil_sampling_rate):
     window_size, pre_event_window, event_window, step = (int(window_size * pupil_sampling_rate),
@@ -41,12 +45,18 @@ def plot_detected_events(window_size, pre_event_window, pupil_diameter, pupil_ti
         step=FloatSlider(value=0.5, min=0.5, max=10, step=0.25, description='Step Size (s)')
     )
 
-def find_best_events(block, pupil_diameter, time, whisker_time, whisker_velocity, print_result=True, plot_result=True):
+def find_best_events(block, pupil_diameter, time, whisker_time, whisker_velocity, print_result=True, plot_result=True, wakeup=True):
     pupil_segment = pupil_diameter[block[0]:block[1]]
     time_segment = time[block[0]:block[1]]
+    analysis_results = calculate_properties_possible_events(block, pupil_diameter, time, wakeup=wakeup)
 
-    analysis_results = calculate_properties_possible_events(block, pupil_diameter, time)
-    filtered_results = [res for res in analysis_results if res[4] > res[2] * 3 and res[1] < 0.5 and res[3] - res[1] > 0.2]
+    if wakeup:
+        filtered_results = [res for res in analysis_results if res[4] > res[2] * 3 and res[1] < 0.5 and res[3] - res[1] > 0.2]
+    else:
+    # res[4] < res[2] * 3 and 
+    # res[4] < res[2] * 3 and res[1] > 0.5 and 
+        filtered_results = [res for res in analysis_results if res[4] > 0.3 and res[3] - res[1] > 0.3]
+
     if print_result:
         for result in filtered_results:
             print(
@@ -57,8 +67,11 @@ def find_best_events(block, pupil_diameter, time, whisker_time, whisker_velocity
 
     if plot_result:
         plt.plot(time_segment, pupil_segment, label='Pupil Segmentation')
+        # for result in filtered_results:
+
         for result in filtered_results:
             plt.axvline(time_segment[result[0]], color='red', linestyle='--')
+
         plt.xlabel('Time (seconds)')
         plt.ylabel('Pupil Segmentation')
         plt.title('Pupil Segmentation Over Time')
@@ -66,6 +79,8 @@ def find_best_events(block, pupil_diameter, time, whisker_time, whisker_velocity
 
         start_index = (whisker_time < time_segment[0]).sum()
         end_index = (whisker_time < time_segment[-1]).sum()
+
+
         plt.plot(whisker_time[start_index:end_index], whisker_velocity[start_index:end_index])
         plt.ylim(0, 1)
         plt.xlabel('Time (seconds)')
@@ -73,7 +88,17 @@ def find_best_events(block, pupil_diameter, time, whisker_time, whisker_velocity
         plt.title('Whisker Velocity Over Time')
         plt.show()
 
-    optimal_event = max(filtered_results, key=lambda x: x[6], default=None)
+    optimal_event = min(filtered_results, key=lambda x: x[5], default=None)
+
+    print("\nOptimal Event:")
+    if optimal_event:
+        print(
+            f"Start index: {optimal_event[0]}, Baseline mean: {optimal_event[1]:.4f}, Baseline std: {optimal_event[2]:.4f}, "
+            f"Event mean: {optimal_event[3]:.4f}, Event std: {optimal_event[4]:.4f}, Downward movements: {optimal_event[5]}, "
+            f"Total downward magnitude: {optimal_event[6]:.4f}"
+        )
+    else:
+        print("No optimal event found.")
 
     if plot_result and optimal_event:
         print("\nBest Event:")
@@ -90,5 +115,6 @@ def find_best_events(block, pupil_diameter, time, whisker_time, whisker_velocity
         plt.title('Pupil Segmentation Over Time')
         plt.legend()
         plt.show()
+
 
     return block[0] + optimal_event[0] if optimal_event else None
