@@ -4,6 +4,17 @@ import logging
 import argparse
 from src.utils.data_processing import process_data
 from datetime import datetime
+def str2bool(v):
+    if isinstance(v, bool):
+        return v
+    v = v.lower()
+    if v in ('yes', 'true', 't', 'y', '1'):
+        return True
+    elif v in ('no', 'false', 'f', 'n', '0'):
+        return False
+    else:
+        raise argparse.ArgumentTypeError('Boolean value expected.')
+    
 
 # Add the project root to the PYTHONPATH
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
@@ -34,7 +45,7 @@ def run_individual(data_folder_path, results_folder=None, threshold_to_exclude_f
 
         # Process the data for the specified folder
         process_data(
-            data_folder_path,
+            data_folder_path=data_folder_path,
             threshold_to_exclude_from_min_max=threshold_to_exclude_from_min_max,
             threshold_to_exclude_base_on_pupil=threshold_to_exclude_base_on_pupil,
             plot_traces=plot_traces,
@@ -64,7 +75,12 @@ if __name__ == "__main__":
     parser.add_argument('--clear_output', type=bool, default=False, help='Whether to clear output')
     parser.add_argument('--bsline_length', type=int, default=5, help='Baseline length')
     parser.add_argument('--event_length', type=int, default=15, help='Event length')
-    parser.add_argument('--wake_up', type=bool, default=False, help='sleep-to-wake or wake-to-sleep event detection')
+    parser.add_argument(
+    '--wake_up',
+    type=str2bool,
+    default=False,
+    help='sleep-to-wake or wake-to-sleep event detection (true|false)'
+)
 
     # Parse arguments
     args = parser.parse_args()
