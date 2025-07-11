@@ -1,0 +1,19 @@
+[2025-07-11, 2:39:53 PM] Gia-Huy Hoang: https://github.com/giahuylhoang/PupilBasedWakingUpEventDetection
+[2025-07-11, 2:42:12 PM] Gia-Huy Hoang: https://education.github.com/git-cheat-sheet-education.pdf
+[2025-07-11, 2:56:50 PM] Florence: name: sleepwakeenv
+channels:
+  - defaults
+  - conda-forge
+dependencies:
+  - python=3.10.12
+  - numpy=1.26.4
+  - pandas=2.2.3
+  - scipy=1.14.1
+  - matplotlib=3.9.2
+  - seaborn=0.11.2
+  - scikit-learn=1.5.2
+  - ipython=7.31.1
+  - ipywidgets=7.6.5
+  - pip
+  - pip:
+      - pathlib==1.0.1
