@@ -69,8 +69,11 @@ if __name__ == "__main__":
     # Parse arguments
     args = parser.parse_args()
 
-    print(args.wake_up)
-    input("Press Enter to continue...")
+    print("Arguments received:")
+    print(f"Wakeup= {args.wake_up}")
+    input("Press and key")
+
+
 
     # Run the individual processing with the provided arguments
     run_individual(
@@ -83,5 +86,5 @@ if __name__ == "__main__":
         clear_output=args.clear_output, 
         bsline_length=args.bsline_length, 
         event_length=args.event_length, 
-        wakeup=False
+        wakeup=args.wake_up
     )
