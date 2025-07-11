@@ -9,7 +9,7 @@ DATA_FOLDER_PATH="data/test/2023.05.07/cycle 6"
 RESULTS_FOLDER="data/test/2023.05.07/cycle 6"
 
 # Default values for optional arguments
-BSLINE_LENGTH=5 # Baseline length in seconds before the event
+BSLINE_LENGTH=10 # Baseline length in seconds before the event
 EVENT_LENGTH=10 # Event length in seconds after the event
 # RESULTS_FOLDER="data/test/2023.05.07/cycle 5" # Path to save results; if empty, a default path will be used
 THRESHOLD_TO_EXCLUDE_FROM_MIN_MAX=1 # Percentile threshold for outlier exclusion in min/max calculations
