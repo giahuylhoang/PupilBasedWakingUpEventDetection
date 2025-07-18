@@ -48,7 +48,8 @@ def moving_average(data, window_size):
 def normalize_series(series, threshold=1, without_min=False):
     min_val = np.percentile(series, threshold)
     max_val = np.max(series)
-    print("Max Value", max_val);
+    print(f"Normalizing series: Maximum value is {max_val}")
+    print(f"Normalizing series: Minimum value (at {threshold}th percentile) is {min_val}")
     if without_min == True:
         return series.copy() / max_val
     else:
@@ -152,7 +153,6 @@ def calculate_properties_possible_events(block, signal, time, step=0.25, baselin
 
     event_indices = np.arange(0, pupil_segment.shape[0], step_size)
 
-    print("Event Indices:", event_indices)
     if wakeup:
         event_indices = event_indices[pupil_segment[event_indices] < threshold]
     else:

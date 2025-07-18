@@ -85,12 +85,6 @@ if __name__ == "__main__":
     # Parse arguments
     args = parser.parse_args()
 
-    print("Arguments received:")
-    print(f"Wakeup= {args.wake_up}")
-    input("Press and key")
-
-
-
     # Run the individual processing with the provided arguments
     run_individual(
         data_folder_path=args.data_folder_path, 

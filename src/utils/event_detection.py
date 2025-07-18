@@ -24,8 +24,6 @@ def detect_events(normalized_smoothed_pupil_size, smoothed_time_series, normaliz
         filled_mask = fill_false_between_trues(mask < -0.5, 10 * pupil_sampling_rate)
     else:
         filled_mask = fill_false_between_trues(mask > 0.5, 10 * pupil_sampling_rate)
-        print("Wake to sleep here")
-        input("Wake to sleep event detection is not implemented yet. Please implement it in the detect_events function.")
     
     # Plotting the mask and normalized smoothed pupil size
     # Uncomment the following lines to enable plotting

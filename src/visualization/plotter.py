@@ -11,39 +11,83 @@ def plot_data(data):
     plt.show()
 
 
-def plot_detected_events(window_size, pre_event_window, pupil_diameter, pupil_times, event_window, threshold, step, pupil_sampling_rate):
-    window_size, pre_event_window, event_window, step = (int(window_size * pupil_sampling_rate),
-                                                        int(pre_event_window * pupil_sampling_rate),
-                                                        int(event_window * pupil_sampling_rate),
-                                                        int(step * pupil_sampling_rate))
+def _plot_detected_events(window_size, pre_event_window, event_window, threshold, step,
+                          pupil_diameter, pupil_times, pupil_sampling_rate):
+    # Convert parameters from seconds to samples
+    ws = int(window_size * pupil_sampling_rate)
+    pev = int(pre_event_window * pupil_sampling_rate)
+    ew = int(event_window * pupil_sampling_rate)
+    st = int(step * pupil_sampling_rate)
     padding = 5
 
+    # Detect events
     events, events_indices = detect_sudden_change_events(
         pupil_diameter,
         padding,
-        pre_event_window,
-        event_window,
+        pev,
+        ew,
         threshold,
-        step
+        st
     )
 
-    event_or_not = np.zeros(pupil_diameter.shape)
+    # Build event indicator array
+    event_or_not = np.zeros_like(pupil_diameter)
     for idx, event_idx in enumerate(events_indices):
-        zero_arr = np.zeros(pupil_diameter.shape)
+        start = st * idx
+        end = start + pev + ew
         if event_idx == 1:
-            zero_arr[step*idx:step*idx+event_window+pre_event_window] = 1
+            event_or_not[start:end] = 1
         elif event_idx == 2:
-            zero_arr[step*idx:step*idx+event_window+pre_event_window] = -1
-        event_or_not += zero_arr
+            event_or_not[start:end] = -1
 
+    # Apply smoothing if requested
+    if ws > 1:
+        kernel = np.ones(ws) / ws
+        pupil_smooth = np.convolve(pupil_diameter, kernel, mode='same')
+    else:
+        pupil_smooth = pupil_diameter
+
+    # Plot results
+    plt.figure(figsize=(10, 4))
+    plt.plot(pupil_times, pupil_diameter, label='Raw')
+    plt.plot(pupil_times, pupil_smooth, label=f'Smoothed ({window_size}s)')
+    plt.fill_between(pupil_times,
+                     np.min(pupil_diameter),
+                     np.max(pupil_diameter),
+                     where=event_or_not > 0,
+                     alpha=0.3,
+                     label='Detected Event +')
+    plt.fill_between(pupil_times,
+                     np.min(pupil_diameter),
+                     np.max(pupil_diameter),
+                     where=event_or_not < 0,
+                     alpha=0.3,
+                     label='Detected Event -')
+    plt.xlabel('Time (s)')
+    plt.ylabel('Pupil Diameter')
+    plt.title('Pupil Event Detection')
+    plt.legend()
+    plt.tight_layout()
+    plt.show()
+
+
+def plot_detected_events_interactive(pupil_diameter, pupil_times, pupil_sampling_rate):
+    """
+    Launch an interactive widget for adjusting detection parameters.
+    """
     interact(
-        plot_detected_events,
-        window_size=FloatSlider(value=1, min=0, max=60, step=1, description='Smoothing'),
+        lambda window_size, pre_event_window, event_window, threshold, step:
+            _plot_detected_events(
+                window_size, pre_event_window, event_window, threshold, step,
+                pupil_diameter, pupil_times, pupil_sampling_rate
+            ),
+        window_size=FloatSlider(value=1, min=0, max=60, step=1, description='Smoothing (s)'),
         pre_event_window=FloatSlider(value=5, min=1, max=20, step=0.5, description='Baseline (s)'),
         event_window=FloatSlider(value=5, min=1, max=20, step=0.5, description='Event Window (s)'),
         threshold=FloatSlider(value=3, min=2, max=10, step=0.5, description='Threshold (SD)'),
         step=FloatSlider(value=0.5, min=0.5, max=10, step=0.25, description='Step Size (s)')
     )
+
 
 def find_best_events(block, pupil_diameter, time, whisker_time, whisker_velocity, print_result=True, plot_result=True, wakeup=True):
     pupil_segment = pupil_diameter[block[0]:block[1]]

@@ -1,8 +1,12 @@
 import os
 import numpy as np
-import matplotlib.pyplot as plt
 import matplotlib
-matplotlib.use('Agg')  # Use a non-interactive backend
+matplotlib.use('TkAgg')       # ← must come before any pyplot import
+
+import matplotlib.pyplot as plt
+plt.ion()                     # ← enable interactive mode
+
+from src.visualization.plotter import plot_detected_events_interactive
 
 import logging
 from src.data.data_loader import load_arteriole_data, load_calcium_data, load_pupil_data, load_whisker_data
@@ -66,6 +70,16 @@ def process_data(data_folder_path, threshold_to_exclude_from_min_max=1, threshol
         whisker_velocity_time = whisker_time[:-1]
 
         waking_up_events = detect_events(normalized_smoothed_pupil_size, smoothed_time_series, normalized_whisker_velocity, whisker_velocity_time, pupil_sampling_rate, whisker_sampling_rate, bsline_length, event_length, wakeup=wakeup)
+
+        if plot_traces:
+            fig = plot_detected_events_interactive(
+                    normalized_smoothed_pupil_size,
+                    smoothed_time_series,
+                    pupil_sampling_rate
+                )
+
+
+        return
 
         # Process and save data
         logging.info("Processing and saving pupil data")
