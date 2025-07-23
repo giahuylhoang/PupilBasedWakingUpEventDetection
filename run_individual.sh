@@ -5,8 +5,8 @@ source ./init.sh
 
 
 # Please input the data path here
-DATA_FOLDER_PATH="data/test/2023.05.07/cycle 6"
-RESULTS_FOLDER="data/test/2023.05.07/cycle 6"
+DATA_FOLDER_PATH="data/test/2023.05.07/cycle 5"
+RESULTS_FOLDER="data/test/2023.05.07/cycle 5"
 
 # Default values for optional arguments
 BSLINE_LENGTH=10 # Baseline length in seconds before the event

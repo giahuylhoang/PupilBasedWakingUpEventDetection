@@ -71,16 +71,6 @@ def process_data(data_folder_path, threshold_to_exclude_from_min_max=1, threshol
 
         waking_up_events = detect_events(normalized_smoothed_pupil_size, smoothed_time_series, normalized_whisker_velocity, whisker_velocity_time, pupil_sampling_rate, whisker_sampling_rate, bsline_length, event_length, wakeup=wakeup)
 
-        if plot_traces:
-            fig = plot_detected_events_interactive(
-                    normalized_smoothed_pupil_size,
-                    smoothed_time_series,
-                    pupil_sampling_rate
-                )
-
-
-        return
-
         # Process and save data
         logging.info("Processing and saving pupil data")
         pupil_traces_df, clean_events = process_pupil_data(pupil_size_normalized, pupil_data['time'].values, smoothed_time_series, waking_up_events, results_path, pupil_sampling_rate, exclude_threshold=threshold_to_exclude_base_on_pupil, normalize=False, bsline_length=bsline_length, event_length=event_length)

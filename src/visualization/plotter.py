@@ -89,76 +89,78 @@ def plot_detected_events_interactive(pupil_diameter, pupil_times, pupil_sampling
     )
 
 
-def find_best_events(block, pupil_diameter, time, whisker_time, whisker_velocity, print_result=True, plot_result=True, wakeup=True):
-    pupil_segment = pupil_diameter[block[0]:block[1]]
-    time_segment = time[block[0]:block[1]]
+def find_best_events(
+    block,
+    pupil_diameter,
+    time,
+    whisker_time,
+    whisker_velocity,
+    print_result=True,
+    plot_result=True,
+    wakeup=True
+):
+    """
+    Identify the optimal event within a candidate block, supporting wakeup (pupil dilation) or sleep (constriction).
+
+    Args:
+        block (tuple): (start_idx, end_idx) of candidate segment in pupil data.
+        pupil_diameter (np.ndarray): Full pupil diameter signal.
+        time (np.ndarray): Corresponding time points for pupil data.
+        whisker_time (np.ndarray): Time points for whisker velocity.
+        whisker_velocity (np.ndarray): Normalized whisker velocity signal.
+        print_result (bool): If True, print metrics for filtered events.
+        plot_result (bool): If True, overlay event lines and whisker trace.
+        wakeup (bool): If True, apply wakeup criteria; else, apply sleep criteria.
+
+    Returns:
+        int or None: Absolute index of chosen event (in pupil samples), or None if none.
+    """
+    
+    start, end = block
+    pupil_seg = pupil_diameter[start:end]
+    time_seg = time[start:end]
+
+    # Compute candidate event properties, passing wakeup flag
     analysis_results = calculate_properties_possible_events(block, pupil_diameter, time, wakeup=wakeup)
 
+    # Filter based on wakeup vs. sleep criteria
     if wakeup:
-        filtered_results = [res for res in analysis_results if res[4] > res[2] * 3 and res[1] < 0.5 and res[3] - res[1] > 0.2]
+        filtered = [r for r in analysis_results if r[4] > r[2] * 3 and r[1] < 0.5 and (r[3] - r[1]) > 0.2]
     else:
-    # res[4] < res[2] * 3 and 
-    # res[4] < res[2] * 3 and res[1] > 0.5 and 
-        filtered_results = [res for res in analysis_results if res[4] > 0.3 and res[3] - res[1] > 0.3]
+        filtered = [r for r in analysis_results if r[4] > 0 and (r[1] - r[3]) > 0.3]
+
+    # Reporting
+    if print_result:
+        for idx, base_mean, base_std, ev_mean, ev_std, downs, def_mag in filtered:
+            print(f"Start idx: {idx}, Baseline mean={base_mean:.3f}, std={base_std:.3f}, "
+                  f"Event mean={ev_mean:.3f}, std={ev_std:.3f}, downs={downs}, mag={def_mag:.3f}")
+
+    # Visualization
+    if plot_result:
+        plt.plot(time_seg, pupil_seg, label='Pupil')
+        for idx, *_ in filtered:
+            plt.axvline(time_seg[idx], color='red', linestyle='--')
+        plt.xlabel('Time (s)')
+        plt.ylabel('Pupil')
+        plt.title('Candidate Events')
+        plt.legend()
+
+        # Overlay whisker
+        wi = np.searchsorted(whisker_time, time_seg[0])
+        wf = np.searchsorted(whisker_time, time_seg[-1])
+        plt.twinx().plot(whisker_time[wi:wf], whisker_velocity[wi:wf], label='Whisker', alpha=0.6)
+        plt.ylabel('Whisker Vel')
+        plt.show()
+
+    # Choose optimal event by maximum deflection magnitude
+    optimal = max(filtered, key=lambda x: x[6], default=None)
 
     if print_result:
-        for result in filtered_results:
-            print(
-                f"Start index: {result[0]}, Baseline mean: {result[1]:.4f}, Baseline std: {result[2]:.4f}, "
-                f"Event mean: {result[3]:.4f}, Event std: {result[4]:.4f}, Total deflection: {result[5]:.4f}, "
-                f"Total deflection value: {result[6]:.4f}"
-            )
+        if optimal:
+            print("\nOptimal Event:")
+            idx, base_mean, base_std, ev_mean, ev_std, downs, def_mag = optimal
+            print(f"Idx: {idx}, def_mag: {def_mag:.3f}")
+        else:
+            print("No optimal event found.")
 
-    if plot_result:
-        plt.plot(time_segment, pupil_segment, label='Pupil Segmentation')
-        # for result in filtered_results:
-
-        for result in filtered_results:
-            plt.axvline(time_segment[result[0]], color='red', linestyle='--')
-
-        plt.xlabel('Time (seconds)')
-        plt.ylabel('Pupil Segmentation')
-        plt.title('Pupil Segmentation Over Time')
-        plt.legend()
-
-        start_index = (whisker_time < time_segment[0]).sum()
-        end_index = (whisker_time < time_segment[-1]).sum()
-
-
-        plt.plot(whisker_time[start_index:end_index], whisker_velocity[start_index:end_index])
-        plt.ylim(0, 1)
-        plt.xlabel('Time (seconds)')
-        plt.ylabel('Normalized Whisker Velocity')
-        plt.title('Whisker Velocity Over Time')
-        plt.show()
-
-    optimal_event = min(filtered_results, key=lambda x: x[5], default=None)
-
-    print("\nOptimal Event:")
-    if optimal_event:
-        print(
-            f"Start index: {optimal_event[0]}, Baseline mean: {optimal_event[1]:.4f}, Baseline std: {optimal_event[2]:.4f}, "
-            f"Event mean: {optimal_event[3]:.4f}, Event std: {optimal_event[4]:.4f}, Downward movements: {optimal_event[5]}, "
-            f"Total downward magnitude: {optimal_event[6]:.4f}"
-        )
-    else:
-        print("No optimal event found.")
-
-    if plot_result and optimal_event:
-        print("\nBest Event:")
-        print(
-            f"Start index: {optimal_event[0]}, Baseline mean: {optimal_event[1]:.4f}, Baseline std: {optimal_event[2]:.4f}, "
-            f"Event mean: {optimal_event[3]:.4f}, Event std: {optimal_event[4]:.4f}, Downward movements: {optimal_event[5]}, "
-            f"Total downward magnitude: {optimal_event[6]:.4f}"
-        )
-
-        plt.plot(time_segment, pupil_segment, label='Pupil Segmentation')
-        plt.axvline(time_segment[optimal_event[0]], color='red', linestyle='--', label='Best Event')
-        plt.xlabel('Time (seconds)')
-        plt.ylabel('Pupil Segmentation')
-        plt.title('Pupil Segmentation Over Time')
-        plt.legend()
-        plt.show()
-
-
-    return block[0] + optimal_event[0] if optimal_event else None
+    return (start + optimal[0]) if optimal else None
