@@ -3,7 +3,7 @@ import matplotlib
 matplotlib.use('TkAgg')  # Use a non-interactive backend for saving plots
 from ipywidgets import interact, FloatSlider
 import numpy as np
-from src.utils.utilities import (detect_sudden_change_events, calculate_properties_possible_events)
+from src.utils.utilities import (detect_sudden_change_events, calculate_properties_possible_events, find_skewed_quadratic_extremum_index)
 
 
 def plot_data(data):
@@ -115,25 +115,60 @@ def find_best_events(
     Returns:
         int or None: Absolute index of chosen event (in pupil samples), or None if none.
     """
-    
+
+    sampling_rate = int(round(1 / np.mean(time)))
+
     start, end = block
     pupil_seg = pupil_diameter[start:end]
     time_seg = time[start:end]
 
+
+
     # Compute candidate event properties, passing wakeup flag
     analysis_results = calculate_properties_possible_events(block, pupil_diameter, time, wakeup=wakeup)
 
-    # Filter based on wakeup vs. sleep criteria
-    if wakeup:
-        filtered = [r for r in analysis_results if r[4] > r[2] * 3 and r[1] < 0.5 and (r[3] - r[1]) > 0.2]
-    else:
-        filtered = [r for r in analysis_results if r[4] > 0 and (r[1] - r[3]) > 0.3]
 
-    # Reporting
-    if print_result:
-        for idx, base_mean, base_std, ev_mean, ev_std, downs, def_mag in filtered:
-            print(f"Start idx: {idx}, Baseline mean={base_mean:.3f}, std={base_std:.3f}, "
-                  f"Event mean={ev_mean:.3f}, std={ev_std:.3f}, downs={downs}, mag={def_mag:.3f}")
+    # r[0]   # idx:            the sample‐index (relative to the block start) where we “detected” the event.
+    # r[1]   # baseline_mean:  mean pupil size over the full baseline window immediately before idx.
+    # r[2]   # baseline_std:   standard deviation of that same baseline window.
+    # r[3]   # event_mean:     mean pupil size over the full event window starting at idx.
+    # r[4]   # event_std:      standard deviation of that event window.
+    # r[5]   # num_upward_movements:
+    #           #   count of positive diffs in the first third of the event window
+    #           #   (how many consecutive increases in pupil size).
+    # r[6]   # total_upward_magnitude:
+    #           #   sum of all those positive diffs (total “rise” magnitude in that segment).
+    # r[7]   # baseline_top_mean:
+    #           #   mean pupil size over the first two‐thirds of the baseline window
+    #           #   (the “top” portion of the baseline).
+    # r[8]   # baseline_top_std:
+    #           #   standard deviation of that top‐baseline segment.
+    # r[9]   # event_bottom_mean:
+    #           #   mean pupil size over the last two‐thirds of the event window
+    #           #   (the “bottom” portion of the event).
+    # r[10]  # event_bottom_std:
+    #           #   standard deviation of that bottom‐event segment.
+    if wakeup:
+        # strong constrictions
+        filtered = [
+        r for r in analysis_results
+        if (r[4] > r[2]*3)        # event_std > 3 * baseline_std
+        and (r[1] < 0.5)          # low baseline mean
+        and ((r[3] - r[1]) > 0.2) # amplitude > 0.2
+        ]
+    else:
+        
+        # strong dilations
+        filtered = [
+        r for r in analysis_results
+        if (r[4] > r[2]*3)         # event_mean < 1/2 * baseline_mean
+        and (r[1] > 0.6)            # high baseline mean
+        and ((r[1] - r[3]) > 0.1)   # amplitude > 0.2
+        ]
+
+
+    if not filtered:
+        return None
 
     # Visualization
     if plot_result:
@@ -151,16 +186,48 @@ def find_best_events(
         plt.twinx().plot(whisker_time[wi:wf], whisker_velocity[wi:wf], label='Whisker', alpha=0.6)
         plt.ylabel('Whisker Vel')
         plt.show()
+        plt.close()
 
+
+    if wakeup:
     # Choose optimal event by maximum deflection magnitude
-    optimal = max(filtered, key=lambda x: x[6], default=None)
+        optimal_idx = max(filtered, key=lambda x: x[6], default=None)[0]
+    else:
+        # Choose optimal event by maximum download magnitude
+                # get absolute event indices
+        event_idxs = [r[0] for r in filtered]
+        # pad by 5 samples each side, but stay within signal bounds
 
-    if print_result:
-        if optimal:
-            print("\nOptimal Event:")
-            idx, base_mean, base_std, ev_mean, ev_std, downs, def_mag = optimal
-            print(f"Idx: {idx}, def_mag: {def_mag:.3f}")
-        else:
-            print("No optimal event found.")
+        min_idx = max(0, min(event_idxs) - sampling_rate * 2)
+        max_idx = max(max(event_idxs) + sampling_rate * 4, len(pupil_seg))
 
-    return (start + optimal[0]) if optimal else None
+
+        # extract that tight segment
+        seg_time = time_seg[min_idx:max_idx]
+        seg_pupil = pupil_seg[min_idx:max_idx]
+
+        # find the skewed‐quad extremum
+        optimal_idx = find_skewed_quadratic_extremum_index(
+            seg_time, seg_pupil, min_idx, plot=plot_result
+        )
+
+        print(f"Optimal event index: {optimal_idx}")
+
+    if plot_result and optimal_idx:
+        plt.plot(time_seg, pupil_seg, label='Pupil')
+        plt.axvline(time_seg[optimal_idx], color='red', linestyle='--')
+        plt.xlabel('Time (s)')
+        plt.ylabel('Pupil')
+        plt.title('Optimal Events')
+        plt.legend()
+        plt.show()
+        plt.close()
+
+    # if print_result:
+    #     if optimal_idx:
+    #         print("\nOptimal Event:")
+    #         print(f"Idx: {optimal_idx}")
+    #     else:
+    #         print("No optimal event found.")
+
+    return (start + optimal_idx) if optimal_idx else None

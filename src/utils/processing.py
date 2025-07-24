@@ -95,40 +95,58 @@ def process_arteriole_data(arteriole_diameter, smoothed_times, final_events, sav
 
     return arteriole_windows_df
 
-def process_whisker_data(normalized_whisker_velocity, whisker_time, smoothed_times, final_events, save_path, whisker_sampling_rate, save_files=True, normalize=True, bsline_length=5, event_length=15):
+def process_whisker_data(normalize_whisker_gradient, whisker_time, smoothed_times,
+                           final_events, save_path, whisker_sampling_rate,
+                           save_files=True, normalize=True,
+                           bsline_length=5, event_length=15):
     windows_whisker = []
     time_event_whisker = whisker_time[0:(bsline_length + event_length) * whisker_sampling_rate] - bsline_length
 
     for event in final_events:
         time = smoothed_times[event]
         event_whisker_idx = (whisker_time < time).sum()
-        window = normalized_whisker_velocity[event_whisker_idx - bsline_length * whisker_sampling_rate:event_whisker_idx + event_length * whisker_sampling_rate]
-        baseline = normalized_whisker_velocity[event_whisker_idx - bsline_length * whisker_sampling_rate:event_whisker_idx]
+        start = event_whisker_idx - bsline_length * whisker_sampling_rate
+        end   = event_whisker_idx + event_length * whisker_sampling_rate
+        # skip out-of-bounds
+        if start < 0 or end > len(normalize_whisker_gradient):
+            continue
+
+        window = normalize_whisker_gradient[start:end]
+        baseline = normalize_whisker_gradient[start:event_whisker_idx]
         if normalize:
             window = 100 * (window - np.mean(baseline)) / np.mean(baseline)
         windows_whisker.append(window)
 
+    # Compute mean and 95% CI
     mean_window_whisker = np.mean(windows_whisker, axis=0)
     ci_whisker = 1.96 * sem(windows_whisker, axis=0)
 
+    # Plot individual windows
     for window in windows_whisker:
         plt.plot(time_event_whisker, window)
-    plt.title("Whisker Velocity Data Windows")
+    plt.title("Whisker Gradient Data Windows")
     plt.xlabel("Time (s)")
-    plt.ylabel("Whisker Velocity")
-    plt.yscale('log')
+    plt.ylabel("Whisker Gradient")
     plt.show()
 
+    # Plot mean with CI
     plt.plot(time_event_whisker, mean_window_whisker, label='Mean')
-    plt.fill_between(time_event_whisker, mean_window_whisker - ci_whisker, mean_window_whisker + ci_whisker, color='b', alpha=0.2, label='95% CI')
-    plt.title("Average Whisker Velocity Data Window with 95% CI")
+    plt.fill_between(
+        time_event_whisker,
+        mean_window_whisker - ci_whisker,
+        mean_window_whisker + ci_whisker,
+        alpha=0.2,
+        label='95% CI'
+    )
+    plt.title("Average Whisker Gradient Window with 95% CI")
     plt.xlabel("Time (s)")
-    plt.ylabel("Whisker Velocity")
-    plt.yscale('log')
+    plt.ylabel("Whisker Gradient")
     plt.legend()
     plt.show()
 
-    whisker_mean_df = pd.DataFrame({'Time (s)': time_event_whisker, 'Whisker Velocity': mean_window_whisker})
+    # Save to CSV
+    whisker_mean_df = pd.DataFrame({'Time (s)': time_event_whisker,
+                                    'Whisker Gradient': mean_window_whisker})
     if save_files:
         whisker_mean_df.to_csv(Path(save_path) / 'whisker_mean.csv', index=False)
 
@@ -139,14 +157,23 @@ def process_whisker_data(normalized_whisker_velocity, whisker_time, smoothed_tim
 
     return whisker_windows_df
 
+
 def process_pupil_data(pupil_size, pupil_time, smoothed_times_series, final_events, save_path, pupil_sampling_rate, exclude_threshold=6, save_files=True, normalize=True, event_length=15, bsline_length=5):
     windows_pupil = []
     clean_events = []
     for event in final_events:
         time = smoothed_times_series[event]
         event_pupil_idx = (pupil_time < time).sum()
-        window = pupil_size[event_pupil_idx - pupil_sampling_rate * bsline_length:event_pupil_idx + pupil_sampling_rate * event_length]
-        baseline = pupil_size[event_pupil_idx - pupil_sampling_rate * bsline_length:event_pupil_idx]
+        start_idx = event_pupil_idx - pupil_sampling_rate * bsline_length
+        end_idx   = event_pupil_idx + pupil_sampling_rate * event_length
+
+        # if the slice is out of bounds or empty, skip
+        if start_idx < 0 or end_idx > len(pupil_size) or end_idx - start_idx == 0:
+            continue
+
+        window   = pupil_size[start_idx:end_idx]
+        baseline = pupil_size[start_idx:event_pupil_idx]
+
         if normalize:
             window = 100 * (window - np.mean(baseline)) / np.mean(baseline)
 

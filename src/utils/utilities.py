@@ -4,6 +4,9 @@ import pandas as pd
 import os
 from scipy.signal import find_peaks
 from scipy.stats import sem
+import matplotlib.pyplot as plt
+import matplotlib.pyplot as plt
+from scipy.optimize import curve_fit
 
 
 def find_folders_with_csv(root_folder):
@@ -156,7 +159,7 @@ def calculate_properties_possible_events(block, signal, time, step=0.25, baselin
     if wakeup:
         event_indices = event_indices[pupil_segment[event_indices] < threshold]
     else:
-        event_indices = event_indices[pupil_segment[event_indices] < threshold]
+        event_indices = event_indices[pupil_segment[event_indices] > threshold]
 
     for idx in event_indices:
         baseline_values = signal[start_idx + idx - baseline_size:start_idx + idx]
@@ -219,3 +222,64 @@ def calculate_derivative(arr, times):
     delta_times = np.diff(times)
     derivatives = delta_arr / delta_times
     return derivatives
+
+def find_skewed_quadratic_extremum_index(time_seg: np.ndarray,
+                                         pupil_seg: np.ndarray,
+                                         seg_offset: int,
+                                         plot: bool = True):
+    """
+    Fit a skewed quadratic model:
+        f(t) = a*(t-h)**2 + k*abs(t-h) + c
+    to (time_seg, pupil_seg), find its peak by evaluating on a fine grid,
+    and return the global index of that peak.
+    If plot is True, display the data, fitted model, and mark the peak.
+    """
+    # Normalize time to start at zero
+    t0 = time_seg[0]
+    t_rel = time_seg - t0
+
+    # Define skewed quadratic
+    def skewed_quad(t, h, a, k, c):
+        return a*(t - h)**2 + k*np.abs(t - h) + c
+
+    # Initial parameter guesses
+    h0 = t_rel[np.argmax(pupil_seg)]  # start at raw max
+    a0 = -1.0                          # negative for concave down
+    k0 = 0.0                           # start symmetric
+    c0 = np.median(pupil_seg)
+    p0 = [h0, a0, k0, c0]
+
+    # Fit model
+    try:
+        popt, _ = curve_fit(skewed_quad, t_rel, pupil_seg, p0=p0, maxfev=5000)
+        h_fit, a_fit, k_fit, c_fit = popt
+    except Exception as e:
+        print(f"[DEBUG] skewed_quad fit failed: {e}")
+        rel_idx = np.argmax(pupil_seg)
+        return (seg_offset + rel_idx, None) if plot else seg_offset + rel_idx
+
+    # Evaluate fitted model on fine grid
+    t_fit_rel = np.linspace(0, t_rel[-1], 500)
+    y_fit = skewed_quad(t_fit_rel, h_fit, a_fit, k_fit, c_fit)
+
+    # Find peak in model
+    rel_idx_fit = np.argmax(y_fit)
+    t_peak = t_fit_rel[rel_idx_fit]
+
+    # Map back to nearest original sample index
+    rel_idx = np.argmin(np.abs(t_rel - t_peak))
+    idx_global = seg_offset + rel_idx
+
+    # Plot if requested
+    if plot:
+        plt.figure()
+        plt.scatter(time_seg, pupil_seg, s=10, label='data')
+        plt.plot(t_fit_rel + t0, y_fit, label='skewed quad fit')
+        plt.scatter(time_seg[rel_idx], pupil_seg[rel_idx], s=50, marker='x', label='peak')
+        plt.xlabel('Time')
+        plt.ylabel('Pupil diameter')
+        plt.legend()
+        plt.show()
+        plt.close()
+
+    return idx_global

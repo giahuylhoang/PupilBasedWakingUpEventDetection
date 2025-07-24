@@ -33,6 +33,6 @@ def load_whisker_data(data_folder_path):
     resampled_whisker_angle_df = pd.read_csv(whisker_file_path, header=None)
     resampled_whisker_angle_df.dropna(inplace=True)
     resampled_whisker_angle_df['time'] = np.linspace(0, 900, resampled_whisker_angle_df[0].shape[0])
-    resampled_whisker_angle_df.columns = ['whisker_angle', 'time']
+    resampled_whisker_angle_df.columns = ['whisker_gradient', 'time']
 
     return resampled_whisker_angle_df

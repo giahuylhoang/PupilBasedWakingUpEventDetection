@@ -14,7 +14,8 @@ def detect_events(
     whisker_sampling_rate,
     bsline_length,
     event_length,
-    wakeup=False
+    wakeup=False,
+    plot_result=False
 ):
     """
     Detect wakeup or sleep events based on sudden changes in pupil size and whisker velocity.
@@ -94,7 +95,7 @@ def detect_events(
             whisker_velocity_time,
             normalized_whisker_velocity,
             print_result=False,
-            plot_result=False,
+            plot_result=plot_result,
             wakeup=wakeup
         )
         if idx is not None:
@@ -110,6 +111,13 @@ def detect_events(
 
     # For wakeup events, require ratio >1.5; for sleep events, ratio <0.67
     threshold_ratio = 1.5 if wakeup else 0.67
-    selected = [evt for evt, r in zip(final_events, integral_data) if (r > threshold_ratio if wakeup else r < threshold_ratio)]
+    selected = [evt for evt, r in zip(final_events, integral_data) if (r > threshold_ratio if wakeup else True)]
+    selected = [evt for evt, r in zip(final_events, integral_data)]
+
+    print(f"Selected {len(selected)} events after filtering by integral ratio.")
+    if not selected:
+        print("No events selected after filtering.")
+        return []
+    print(f"Selected events: {selected}")
 
     return selected

@@ -4,7 +4,7 @@ import matplotlib
 matplotlib.use('TkAgg')       # ← must come before any pyplot import
 
 import matplotlib.pyplot as plt
-plt.ion()                     # ← enable interactive mode
+# plt.ion()                     # ← enable interactive mode
 
 from src.visualization.plotter import plot_detected_events_interactive
 
@@ -65,11 +65,11 @@ def process_data(data_folder_path, threshold_to_exclude_from_min_max=1, threshol
         # Detect events
         logging.info("Detecting events")
         whisker_time = whisker_data['time'].values
-        whisker_angle = whisker_data['whisker_angle'].values
-        normalized_whisker_velocity = normalize_series(np.power(calculate_derivative(whisker_angle, whisker_time), 2))
-        whisker_velocity_time = whisker_time[:-1]
+        whisker_gradient = whisker_data['whisker_gradient'].values
+        normalized_whisker_gradient = normalize_series(whisker_gradient)
 
-        waking_up_events = detect_events(normalized_smoothed_pupil_size, smoothed_time_series, normalized_whisker_velocity, whisker_velocity_time, pupil_sampling_rate, whisker_sampling_rate, bsline_length, event_length, wakeup=wakeup)
+
+        waking_up_events = detect_events(normalized_smoothed_pupil_size, smoothed_time_series, normalized_whisker_gradient, whisker_time, pupil_sampling_rate, whisker_sampling_rate, bsline_length, event_length, wakeup=wakeup, plot_result=plot_traces)
 
         # Process and save data
         logging.info("Processing and saving pupil data")
@@ -86,7 +86,7 @@ def process_data(data_folder_path, threshold_to_exclude_from_min_max=1, threshol
         arteriole_traces.to_csv(os.path.join(results_path, 'arteriole_traces.csv'), index=False)
 
         logging.info("Processing and saving whisker data")
-        whisker_traces = process_whisker_data(normalized_whisker_velocity, whisker_velocity_time, smoothed_time_series, waking_up_events, results_path, whisker_sampling_rate, bsline_length=bsline_length, event_length=event_length)
+        whisker_traces = process_whisker_data(normalized_whisker_gradient, whisker_time, smoothed_time_series, waking_up_events, results_path, whisker_sampling_rate, bsline_length=bsline_length, event_length=event_length, normalize=False)
         whisker_traces.to_csv(os.path.join(results_path, 'whisker_traces.csv'), index=False)
 
         if save_trace_plot:
@@ -111,6 +111,13 @@ def process_data(data_folder_path, threshold_to_exclude_from_min_max=1, threshol
                 plt.legend()
             figure_3.savefig(os.path.join(results_path, 'arteriole_traces.png'))
             plt.close(figure_3)
+
+            figure_4 = plt.figure(figsize=(14, 8))
+            for col in whisker_traces.columns[1:]:
+                plt.plot(whisker_traces['Time (s)'], whisker_traces[col], label=col)
+                plt.legend()
+            figure_4.savefig(os.path.join(results_path, 'whisker_traces.png'))
+            plt.close(figure_4)
 
         if clear_output:
             from IPython.display import clear_output

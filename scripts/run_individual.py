@@ -70,9 +70,9 @@ if __name__ == "__main__":
     parser.add_argument('--results_folder', type=str, help='Optional path to the results folder')
     parser.add_argument('--threshold_to_exclude_from_min_max', type=int, default=1, help='Threshold to exclude from min max')
     parser.add_argument('--threshold_to_exclude_base_on_pupil', type=int, default=2, help='Threshold to exclude based on pupil')
-    parser.add_argument('--plot_traces', type=bool, default=True, help='Whether to plot traces')
-    parser.add_argument('--save_trace_plot', type=bool, default=True, help='Whether to save trace plot')
-    parser.add_argument('--clear_output', type=bool, default=False, help='Whether to clear output')
+    parser.add_argument('--plot_traces', type=str2bool, default=True, help='Whether to plot traces')
+    parser.add_argument('--save_trace_plot', type=str2bool, default=True, help='Whether to save trace plot')
+    parser.add_argument('--clear_output', type=str2bool, default=False, help='Whether to clear output')
     parser.add_argument('--bsline_length', type=int, default=5, help='Baseline length')
     parser.add_argument('--event_length', type=int, default=15, help='Event length')
     parser.add_argument(

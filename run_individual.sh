@@ -6,21 +6,23 @@ source ./init.sh
 
 # Please input the data path here
 DATA_FOLDER_PATH="data/test/2023.05.07/cycle 5"
-RESULTS_FOLDER="data/test/2023.05.07/cycle 5"
+RESULTS_FOLDER="data/result/test/2023.05.07/cycle 5"
 
 # Default values for optional arguments
 BSLINE_LENGTH=10 # Baseline length in seconds before the event
-EVENT_LENGTH=10 # Event length in seconds after the event
+EVENT_LENGTH=20 # Event length in seconds after the event
 # RESULTS_FOLDER="data/test/2023.05.07/cycle 5" # Path to save results; if empty, a default path will be used
 THRESHOLD_TO_EXCLUDE_FROM_MIN_MAX=1 # Percentile threshold for outlier exclusion in min/max calculations
 THRESHOLD_MID_LINE=0.5
 # Example: If set to 1, values outside 1st-99th percentiles are excluded
 
+
 THRESHOLD_TO_EXCLUDE_BASE_ON_PUPIL=2 # Threshold for excluding events based on pupil trace outliers
 # Example: If set to 2, events where the top 20% of pupil values > 2 or bottom 20% < -2 are excluded
 # Set to a very high value to effectively disable this exclusion
 
-PLOT_TRACES=true # Whether to generate plots of the traces
+
+PLOT_TRACES=false # Whether to generate plots of the traces
 SAVE_TRACE_PLOT=true # Whether to save the generated trace plots
 CLEAR_OUTPUT=false # Whether to clear output after processing (useful in interactive environments)
 WAKE_UP=false # If sleep-to-wake transition detection, set it to False, otherwise,if wake-to-sleep transition detection, set it to True
