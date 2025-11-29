@@ -8,7 +8,14 @@ data/
 # C extensions
 *.so
 
+# Shell scripts - ignore all except project scripts
 *.sh
+# But track these important setup and run scripts
+!setup.sh
+!test_setup.sh
+!init.sh
+!run_individual.sh
+!run_batch.sh
 
 # Distribution / packaging
 .Python

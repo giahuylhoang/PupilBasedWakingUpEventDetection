@@ -30,7 +30,14 @@ A Python-based analysis tool for detecting waking up events based on pupil data 
    - Install all required dependencies
    - Set up the environment
 
-3. **You're ready to go!** Proceed to "Running the Analysis" below.
+3. **Test the setup:**
+   ```bash
+   chmod +x test_setup.sh
+   ./test_setup.sh
+   ```
+   This will verify that everything is installed and working correctly.
+
+4. **You're ready to go!** Proceed to "Running the Analysis" below.
 
 ### Alternative Manual Setup
 
@@ -133,6 +140,30 @@ Results are saved to the specified results folder and include:
 - `*_mean.csv` - Mean trace data for each measurement type
 - `*_windows.csv` - Windowed event data
 - `*_traces.png` - Visualization plots (if enabled)
+
+## Quick Test on Another Computer
+
+To quickly test if the setup works on another computer after pulling from git:
+
+```bash
+# 1. Make scripts executable (if needed)
+chmod +x setup.sh test_setup.sh init.sh run_individual.sh
+
+# 2. Run the setup
+./setup.sh
+
+# 3. Test everything is working
+./test_setup.sh
+```
+
+The `test_setup.sh` script will check:
+- ✓ Python 3 installation
+- ✓ Virtual environment creation
+- ✓ All required packages
+- ✓ Project module imports
+- ✓ Basic functionality
+
+If all tests pass, you're good to go!
 
 ## Troubleshooting
 
