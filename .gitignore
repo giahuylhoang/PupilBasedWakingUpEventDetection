@@ -13,6 +13,7 @@ data/
 # But track these important setup and run scripts
 !setup.sh
 !test_setup.sh
+!check_prerequisites.sh
 !init.sh
 !run_individual.sh
 !run_batch.sh

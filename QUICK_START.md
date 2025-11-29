@@ -2,16 +2,29 @@
 
 ## For First-Time Setup (New Computer)
 
-Copy and paste these commands:
+**That's it! Just run one command:**
 
 ```bash
-# Make scripts executable
-chmod +x setup.sh test_setup.sh init.sh run_individual.sh
+# Make scripts executable and run setup
+chmod +x *.sh && ./setup.sh
+```
 
-# Run setup (takes 2-5 minutes)
-./setup.sh
+The `setup.sh` script will:
+1. ✓ Check if Python 3 is installed (if not, shows installation instructions)
+2. ✓ Check if pip and venv are available
+3. ✓ Create virtual environment
+4. ✓ Install all required dependencies
+5. ✓ Verify everything is working
 
-# Test everything works
+**If Python is not installed**, the script will detect your OS and show you exactly how to install it. After installing Python, just run `./setup.sh` again and it will continue automatically.
+
+For detailed Python installation help, see **[INSTALL_PYTHON.md](INSTALL_PYTHON.md)**.
+
+### Optional: Test Setup
+
+After setup completes, verify everything works:
+
+```bash
 ./test_setup.sh
 ```
 
@@ -33,11 +46,13 @@ To quickly verify everything still works:
 
 ## One-Line Setup & Test
 
-If you want to do everything in one command:
+Complete setup and testing in one command:
 
 ```bash
 chmod +x *.sh && ./setup.sh && ./test_setup.sh
 ```
+
+**Note:** `./setup.sh` handles everything automatically - it checks prerequisites, installs dependencies, and sets up the complete environment. If Python is missing, it will guide you through installation.
 
 ## What Each Script Does
 

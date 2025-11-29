@@ -8,6 +8,17 @@ A Python-based analysis tool for detecting waking up events based on pupil data 
 - **macOS or Linux** operating system
 - **Bash shell** (default on macOS and most Linux distributions)
 
+### Check Prerequisites
+
+Before setting up, check if you have everything needed:
+
+```bash
+chmod +x check_prerequisites.sh
+./check_prerequisites.sh
+```
+
+If Python is not installed, see **[INSTALL_PYTHON.md](INSTALL_PYTHON.md)** for detailed installation instructions.
+
 ## Quick Setup
 
 ### For New Users (First Time Setup)
@@ -18,17 +29,21 @@ A Python-based analysis tool for detecting waking up events based on pupil data 
    cd PupilBasedWakingUpEventDetection
    ```
 
-2. **Run the setup script:**
+2. **Run the setup script (it handles everything):**
    ```bash
    chmod +x setup.sh
    ./setup.sh
    ```
 
-   This will:
-   - Check for Python 3 installation
-   - Create a virtual environment
-   - Install all required dependencies
-   - Set up the environment
+   The `setup.sh` script automatically:
+   - ✓ Checks if Python 3 is installed (if not, shows installation instructions)
+   - ✓ Checks for pip and venv (tries to auto-install if missing)
+   - ✓ Creates a virtual environment
+   - ✓ Installs all required dependencies from `requirements.txt`
+   - ✓ Verifies all packages are working correctly
+   - ✓ Provides clear error messages if anything is missing
+   
+   **Note:** If Python 3 is not installed, the script will detect your OS and show you exactly how to install it. After installing Python, just run `./setup.sh` again.
 
 3. **Test the setup:**
    ```bash
@@ -171,23 +186,35 @@ If all tests pass, you're good to go!
 
 If you get an error about Python 3 not being found:
 
-**On macOS:**
-```bash
-# Install using Homebrew
-brew install python3
+1. **Run the prerequisite checker:**
+   ```bash
+   ./check_prerequisites.sh
+   ```
+   This will detect your OS and show specific installation instructions.
 
-# Or download from python.org
-```
+2. **Or see the detailed guide:**
+   - See **[INSTALL_PYTHON.md](INSTALL_PYTHON.md)** for comprehensive installation instructions
 
-**On Linux:**
-```bash
-# Ubuntu/Debian
-sudo apt-get update
-sudo apt-get install python3 python3-pip python3-venv
+3. **Quick installation commands:**
 
-# Fedora/CentOS
-sudo dnf install python3 python3-pip
-```
+   **On macOS:**
+   ```bash
+   # Using Homebrew (recommended)
+   brew install python3
+   
+   # Or download from python.org
+   # Visit: https://www.python.org/downloads/
+   ```
+
+   **On Linux:**
+   ```bash
+   # Ubuntu/Debian
+   sudo apt-get update
+   sudo apt-get install python3 python3-pip python3-venv
+   
+   # Fedora/CentOS
+   sudo dnf install python3 python3-pip
+   ```
 
 ### Virtual Environment Issues
 
