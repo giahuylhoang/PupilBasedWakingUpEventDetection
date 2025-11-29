@@ -5,8 +5,8 @@ source ./init.sh
 
 
 # Please input the data path here
-DATA_FOLDER_PATH="data/test/2023.05.07/cycle 5"
-RESULTS_FOLDER="data/result/test/2023.05.07/cycle 5"
+DATA_FOLDER_PATH="data/raw/test/cycle_9"
+RESULTS_FOLDER="data/results/test/cycle_9"
 
 # Default values for optional arguments
 BSLINE_LENGTH=10 # Baseline length in seconds before the event
@@ -25,7 +25,7 @@ THRESHOLD_TO_EXCLUDE_BASE_ON_PUPIL=2 # Threshold for excluding events based on p
 PLOT_TRACES=false # Whether to generate plots of the traces
 SAVE_TRACE_PLOT=true # Whether to save the generated trace plots
 CLEAR_OUTPUT=false # Whether to clear output after processing (useful in interactive environments)
-WAKE_UP=false # If sleep-to-wake transition detection, set it to False, otherwise,if wake-to-sleep transition detection, set it to True
+WAKE_UP=true # If sleep-to-wake transition detection, set it to False, otherwise,if wake-to-sleep transition detection, set it to True
 
 
 # Function to display help message
@@ -62,7 +62,7 @@ if [ -z "$DATA_FOLDER_PATH" ]; then
 fi
 
 # Run the Python script with the provided arguments
-python scripts/run_individual.py "$DATA_FOLDER_PATH" \
+python3 scripts/run_individual.py "$DATA_FOLDER_PATH" \
     --results_folder "$RESULTS_FOLDER" \
     --threshold_to_exclude_from_min_max "$THRESHOLD_TO_EXCLUDE_FROM_MIN_MAX" \
     --threshold_to_exclude_base_on_pupil "$THRESHOLD_TO_EXCLUDE_BASE_ON_PUPIL" \
