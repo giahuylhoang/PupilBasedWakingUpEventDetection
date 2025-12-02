@@ -30,7 +30,7 @@ logging.basicConfig(
 
 def run_individual(data_folder_path, results_folder=None, threshold_to_exclude_from_min_max=1,
                    threshold_to_exclude_base_on_pupil=2, plot_traces=True, save_trace_plot=True,
-                   clear_output=False, bsline_length=5, event_length=15, wakeup=False):
+                   clear_output=False, bsline_length=5, event_length=15, wakeup=False, interactive_plots=False):
     try:
         logging.info("Starting individual data processing")
 
@@ -54,7 +54,8 @@ def run_individual(data_folder_path, results_folder=None, threshold_to_exclude_f
             bsline_length=bsline_length,
             event_length=event_length,
             results_folder=results_folder,
-            wakeup=wakeup
+            wakeup=wakeup,
+            interactive_plots=interactive_plots
         )
 
         logging.info("Individual data processing completed successfully")
@@ -81,6 +82,7 @@ if __name__ == "__main__":
     default=False,
     help='sleep-to-wake or wake-to-sleep event detection (true|false)'
 )
+    parser.add_argument('--interactive_plots', type=str2bool, default=False, help='Whether to show plots interactively (true) or just save them (false)')
 
     # Parse arguments
     args = parser.parse_args()
@@ -96,5 +98,6 @@ if __name__ == "__main__":
         clear_output=args.clear_output, 
         bsline_length=args.bsline_length, 
         event_length=args.event_length, 
-        wakeup=args.wake_up
+        wakeup=args.wake_up,
+        interactive_plots=args.interactive_plots
     )

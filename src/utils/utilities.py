@@ -283,3 +283,42 @@ def find_skewed_quadratic_extremum_index(time_seg: np.ndarray,
         plt.close()
 
     return idx_global
+
+
+def _load_csv_with_optional_header(file_path):
+    """
+    Load a CSV file that may or may not have a header row.
+    - If the first line contains non-numeric values, treat it as a header.
+    - Remove any trailing blank lines in the file.
+    Returns a DataFrame.
+    """
+    import pandas as pd
+
+    # Read all lines, strip trailing blank lines
+    with open(file_path, 'r') as f:
+        lines = f.readlines()
+    while lines and lines[-1].strip() == '':
+        lines = lines[:-1]
+
+    # Heuristic to determine if first row is a header (non-numeric)
+    def looks_like_float(s):
+        try:
+            float(s)
+            return True
+        except Exception:
+            return False
+
+    if not lines:
+        # empty file
+        return pd.DataFrame()
+    first_line = lines[0].strip().split(',')
+    has_header = not all(looks_like_float(s) for s in first_line)
+
+    from io import StringIO
+    trimmed_csv = StringIO(''.join(lines))
+
+    if has_header:
+        df = pd.read_csv(trimmed_csv)
+    else:
+        df = pd.read_csv(trimmed_csv, header=None, skip_blank_lines=True)
+    return df

@@ -177,3 +177,4 @@ If you're still having trouble:
 - **Recommended**: Python 3.8 or higher
 - **Tested with**: Python 3.9, 3.10, 3.11, 3.12
 
+

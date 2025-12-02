@@ -1,6 +1,7 @@
 import pandas as pd
 import numpy as np
 import os
+from src.utils.utilities import _load_csv_with_optional_header
 
 def load_data(file_path):
     return pd.read_csv(file_path)
@@ -77,27 +78,58 @@ def load_whisker_data(data_folder_path):
     
     print(f"Loading whisker data from: {whisker_file}")
     # Read CSV file without header
-    raw_df = pd.read_csv(whisker_file, header=None)
+
+    raw_df = _load_csv_with_optional_header(whisker_file)
     
-    # Extract only the first column as whisker_gradient (handles files with multiple columns)
-    # Convert to numeric, coercing errors to NaN
-    whisker_gradient = pd.to_numeric(raw_df.iloc[:, 0], errors='coerce').values
+    # Expect two columns: first is time, second is whisker_gradient
+    whisker_time = pd.to_numeric(raw_df.iloc[:, 0], errors='coerce').values
+    whisker_gradient = pd.to_numeric(raw_df.iloc[:, 1], errors='coerce').values
     
-    # Remove NaN values from the gradient data
-    mask = ~pd.isna(whisker_gradient)
-    whisker_gradient = whisker_gradient[mask]
-    num_points = len(whisker_gradient)
-    
-    if num_points == 0:
-        raise ValueError(f"Whisker data file is empty or contains only NaN/non-numeric values: {whisker_file}")
-    
-    # Ensure it's a numeric array (float64)
+    # Interpolate NaN values in whisker_gradient and whisker_time using average of adjacent rows
     whisker_gradient = whisker_gradient.astype(np.float64)
-    
-    # Create a new DataFrame with only whisker_gradient and time columns
+    whisker_time = whisker_time.astype(np.float64)
+
+    # Helper function to interpolate nan by average of adjacent rows
+    def interpolate_adjacent(arr):
+        nan_mask = np.isnan(arr)
+        if np.any(nan_mask):
+            arr = arr.copy()
+            for idx in np.where(nan_mask)[0]:
+                prev_idx = idx - 1
+                next_idx = idx + 1
+                while prev_idx >= 0 and np.isnan(arr[prev_idx]):
+                    prev_idx -= 1
+                while next_idx < len(arr) and np.isnan(arr[next_idx]):
+                    next_idx += 1
+                prev_val = arr[prev_idx] if prev_idx >= 0 else np.nan
+                next_val = arr[next_idx] if next_idx < len(arr) else np.nan
+                if not np.isnan(prev_val) and not np.isnan(next_val):
+                    arr[idx] = (prev_val + next_val) / 2.0
+                elif not np.isnan(prev_val):
+                    arr[idx] = prev_val
+                elif not np.isnan(next_val):
+                    arr[idx] = next_val
+                else:
+                    arr[idx] = 0.0  # fallback, but should not happen in normal data
+        return arr
+
+    whisker_gradient = interpolate_adjacent(whisker_gradient)
+    whisker_time = interpolate_adjacent(whisker_time)
+
+    # # Remove any rows where either value is still nan
+    # valid_mask = ~np.isnan(whisker_time) & ~np.isnan(whisker_gradient)
+    # whisker_time = whisker_time[valid_mask]
+    # whisker_gradient = whisker_gradient[valid_mask]
+
+    num_points = len(whisker_gradient)
+    if num_points == 0:
+        raise ValueError(f"Whisker data file is empty or contains only NaN/non-numeric values after interpolation: {whisker_file}")
+
     resampled_whisker_angle_df = pd.DataFrame({
         'whisker_gradient': whisker_gradient,
-        'time': np.linspace(0, 900, num_points)
+        'time': whisker_time
     })
+
+
 
     return resampled_whisker_angle_df

@@ -5,8 +5,8 @@ source ./init.sh
 
 
 # Please input the data path here
-DATA_FOLDER_PATH="data/raw/test/cycle_9"
-RESULTS_FOLDER="data/results/test/cycle_9"
+DATA_FOLDER_PATH="data/raw/test/cycle_10"
+RESULTS_FOLDER="data/results/test/cycle_10"
 
 # Default values for optional arguments
 BSLINE_LENGTH=10 # Baseline length in seconds before the event
@@ -26,6 +26,7 @@ PLOT_TRACES=false # Whether to generate plots of the traces
 SAVE_TRACE_PLOT=true # Whether to save the generated trace plots
 CLEAR_OUTPUT=false # Whether to clear output after processing (useful in interactive environments)
 WAKE_UP=true # If sleep-to-wake transition detection, set it to False, otherwise,if wake-to-sleep transition detection, set it to True
+INTERACTIVE_PLOTS=true # Whether to show plots interactively (true) or just save them (false)
 
 
 # Function to display help message
@@ -33,7 +34,7 @@ usage() {
     echo "Usage: $0 -d <data_folder_path> [-r <results_folder>] [--threshold_min_max <value>] [--threshold_pupil <value>]"
     echo "          [--plot_traces <true|false>] [--save_trace_plot <true|false>] [--clear_output <true|false>]"
     echo "          [--bsline_length <value>] [--event_length <value>]" 
-    echo "          [--wake_up <true|false>]"
+    echo "          [--wake_up <true|false>] [--interactive_plots <true|false>]"
     exit 1
 }
 
@@ -50,6 +51,7 @@ while [[ "$#" -gt 0 ]]; do
         --bsline_length) BSLINE_LENGTH="$2"; shift ;;
         --event_length) EVENT_LENGTH="$2"; shift ;;
         --wake_up) WAKE_UP="$2"; shift ;;
+        --interactive_plots) INTERACTIVE_PLOTS="$2"; shift ;;
         *) usage ;;
     esac
     shift
@@ -71,4 +73,5 @@ python3 scripts/run_individual.py "$DATA_FOLDER_PATH" \
     --clear_output "$CLEAR_OUTPUT" \
     --bsline_length "$BSLINE_LENGTH" \
     --event_length "$EVENT_LENGTH" \
-    --wake_up "$WAKE_UP"
+    --wake_up "$WAKE_UP" \
+    --interactive_plots "$INTERACTIVE_PLOTS"

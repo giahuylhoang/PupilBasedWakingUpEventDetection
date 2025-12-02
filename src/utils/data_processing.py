@@ -1,18 +1,16 @@
 import os
 import numpy as np
 import matplotlib
-matplotlib.use('TkAgg')       # ← must come before any pyplot import
+# Set default non-interactive backend (can be overridden in function)
+matplotlib.use('Agg')  # Non-interactive backend by default
 
 import matplotlib.pyplot as plt
-# plt.ion()                     # ← enable interactive mode
-
-from src.visualization.plotter import plot_detected_events_interactive
 
 import logging
 from src.data.data_loader import load_arteriole_data, load_calcium_data, load_pupil_data, load_whisker_data
 from src.utils.utilities import (
     detect_and_interpolate_sudden_changes, normalize_mean_std, normalize_series,
-    moving_average, calculate_derivative,
+    moving_average, calculate_derivative
 )
 from src.utils.processing import process_calcium_data, process_arteriole_data, process_whisker_data, process_pupil_data
 from src.utils.event_detection import detect_events
@@ -20,10 +18,23 @@ from src.utils.event_detection import detect_events
 # Configure logging
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 
-def process_data(data_folder_path, threshold_to_exclude_from_min_max=1, threshold_to_exclude_base_on_pupil=2, plot_traces=False, save_trace_plot=True, clear_output=True, bsline_length=5, event_length=15, results_folder=None, wakeup=False):
+def process_data(data_folder_path, threshold_to_exclude_from_min_max=1, threshold_to_exclude_base_on_pupil=2, plot_traces=False, save_trace_plot=True, clear_output=True, bsline_length=5, event_length=15, results_folder=None, wakeup=False, interactive_plots=False):
     try:
         if results_folder is None:
             raise ValueError("results_folder must be provided")
+      
+        # Set matplotlib backend and interactive mode based on parameter
+        if interactive_plots:
+            # Switch to interactive backend before any plotting
+            try:
+                matplotlib.use('TkAgg', force=True)
+            except Exception as e:
+                logging.warning(f"Could not switch to TkAgg backend: {e}. Interactive plots may not work.")
+            plt.ioff()  # Disable automatic interactive mode - we'll use block=True in show()
+            logging.info("Interactive plotting enabled (plots will block until closed)")
+        else:
+            plt.ioff()  # Disable interactive mode
+            logging.info("Interactive plotting disabled (plots will be saved only)")
       
         results_path = results_folder
         os.makedirs(results_path, exist_ok=True)
@@ -43,6 +54,7 @@ def process_data(data_folder_path, threshold_to_exclude_from_min_max=1, threshol
         logging.info("Loading whisker data")
         whisker_data = load_whisker_data(data_folder_path)
 
+        
         # Normalize and interpolate pupil data
         logging.info("Normalizing and interpolating pupil data")
         pupil_data_normalized = normalize_mean_std(pupil_data)
@@ -73,20 +85,20 @@ def process_data(data_folder_path, threshold_to_exclude_from_min_max=1, threshol
 
         # Process and save data
         logging.info("Processing and saving pupil data")
-        pupil_traces_df, clean_events = process_pupil_data(pupil_size_normalized, pupil_data['time'].values, smoothed_time_series, waking_up_events, results_path, pupil_sampling_rate, exclude_threshold=threshold_to_exclude_base_on_pupil, normalize=False, bsline_length=bsline_length, event_length=event_length)
+        pupil_traces_df, clean_events = process_pupil_data(pupil_size_normalized, pupil_data['time'].values, smoothed_time_series, waking_up_events, results_path, pupil_sampling_rate, exclude_threshold=threshold_to_exclude_base_on_pupil, normalize=False, bsline_length=bsline_length, event_length=event_length, interactive_plots=interactive_plots)
         pupil_traces_df.to_csv(os.path.join(results_path, 'pupil_traces.csv'), index=False)
         waking_up_events = clean_events
 
         logging.info("Processing and saving calcium data")
-        calcium_traces_df = process_calcium_data(calcium_data, smoothed_time_series, waking_up_events, results_path, calcium_sampling_rate, bsline_length=bsline_length, event_length=event_length)
+        calcium_traces_df = process_calcium_data(calcium_data, smoothed_time_series, waking_up_events, results_path, calcium_sampling_rate, bsline_length=bsline_length, event_length=event_length, interactive_plots=interactive_plots)
         calcium_traces_df.to_csv(os.path.join(results_path, 'calcium_traces.csv'), index=False)
 
         logging.info("Processing and saving arteriole data")
-        arteriole_traces = process_arteriole_data(arteriole_data, smoothed_time_series, waking_up_events, results_path, arteriole_sampling_rate, bsline_length=bsline_length, event_length=event_length)
+        arteriole_traces = process_arteriole_data(arteriole_data, smoothed_time_series, waking_up_events, results_path, arteriole_sampling_rate, bsline_length=bsline_length, event_length=event_length, interactive_plots=interactive_plots)
         arteriole_traces.to_csv(os.path.join(results_path, 'arteriole_traces.csv'), index=False)
 
         logging.info("Processing and saving whisker data")
-        whisker_traces = process_whisker_data(normalized_whisker_gradient, whisker_time, smoothed_time_series, waking_up_events, results_path, whisker_sampling_rate, bsline_length=bsline_length, event_length=event_length, normalize=False)
+        whisker_traces = process_whisker_data(normalized_whisker_gradient, whisker_time, smoothed_time_series, waking_up_events, results_path, whisker_sampling_rate, bsline_length=bsline_length, event_length=event_length, normalize=False, interactive_plots=interactive_plots)
         whisker_traces.to_csv(os.path.join(results_path, 'whisker_traces.csv'), index=False)
 
         if save_trace_plot:
