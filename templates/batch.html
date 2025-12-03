@@ -1,0 +1,727 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Batch Processing</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+            background: linear-gradient(135deg, #f093fb 0%, #f5576c 100%);
+            min-height: 100vh;
+            padding: 20px;
+        }
+        .container {
+            max-width: 800px;
+            margin: 0 auto;
+            background: white;
+            border-radius: 20px;
+            box-shadow: 0 20px 60px rgba(0,0,0,0.3);
+            padding: 40px;
+        }
+        h1 {
+            color: #333;
+            margin-bottom: 30px;
+        }
+        .back-btn {
+            display: inline-block;
+            padding: 8px 16px;
+            background: #6c757d;
+            color: white;
+            text-decoration: none;
+            border-radius: 5px;
+            margin-bottom: 20px;
+            font-size: 0.9em;
+        }
+        .back-btn:hover {
+            background: #5a6268;
+        }
+        .form-group {
+            margin-bottom: 25px;
+        }
+        label {
+            display: block;
+            margin-bottom: 8px;
+            color: #333;
+            font-weight: 600;
+        }
+        input[type="text"], input[type="number"], textarea {
+            width: 100%;
+            padding: 12px;
+            border: 2px solid #e0e0e0;
+            border-radius: 8px;
+            font-size: 1em;
+            transition: border-color 0.3s;
+        }
+        textarea {
+            min-height: 100px;
+            font-family: monospace;
+            resize: vertical;
+        }
+        input:focus, textarea:focus {
+            outline: none;
+            border-color: #f5576c;
+        }
+        .checkbox-group {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+        input[type="checkbox"] {
+            width: 20px;
+            height: 20px;
+            cursor: pointer;
+        }
+        .help-text {
+            font-size: 0.85em;
+            color: #666;
+            margin-top: 5px;
+        }
+        .form-row {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 20px;
+        }
+        .btn {
+            padding: 15px 40px;
+            font-size: 1.1em;
+            border: none;
+            border-radius: 10px;
+            cursor: pointer;
+            font-weight: 600;
+            transition: all 0.3s ease;
+            width: 100%;
+            margin-top: 20px;
+        }
+        .btn-submit {
+            background: linear-gradient(135deg, #f093fb 0%, #f5576c 100%);
+            color: white;
+        }
+        .btn-submit:hover:not(:disabled) {
+            transform: translateY(-2px);
+            box-shadow: 0 10px 20px rgba(245, 87, 108, 0.4);
+        }
+        .btn:disabled {
+            opacity: 0.6;
+            cursor: not-allowed;
+        }
+        .status {
+            margin-top: 20px;
+            padding: 15px;
+            border-radius: 8px;
+            display: none;
+        }
+        .status.show {
+            display: block;
+        }
+        .status.success {
+            background: #d4edda;
+            color: #155724;
+            border: 1px solid #c3e6cb;
+        }
+        .status.error {
+            background: #f8d7da;
+            color: #721c24;
+            border: 1px solid #f5c6cb;
+        }
+        .status.info {
+            background: #d1ecf1;
+            color: #0c5460;
+            border: 1px solid #bee5eb;
+        }
+        .status-progress {
+            margin-top: 10px;
+            font-weight: 600;
+            white-space: pre-line;
+            font-family: monospace;
+            font-size: 0.9em;
+        }
+        .option-group {
+            background: #f8f9fa;
+            padding: 15px;
+            border-radius: 8px;
+            margin-bottom: 20px;
+        }
+        .option-group h3 {
+            font-size: 1em;
+            margin-bottom: 10px;
+            color: #555;
+        }
+        .input-group {
+            display: flex;
+            gap: 10px;
+        }
+        .input-group input,
+        .input-group textarea {
+            flex: 1;
+        }
+        .btn-browse {
+            padding: 12px 20px;
+            background: #28a745;
+            color: white;
+            border: none;
+            border-radius: 8px;
+            cursor: pointer;
+            font-weight: 600;
+            white-space: nowrap;
+            transition: background 0.3s;
+            align-self: flex-start;
+        }
+        .btn-browse:hover {
+            background: #218838;
+        }
+        .modal {
+            display: none;
+            position: fixed;
+            z-index: 1000;
+            left: 0;
+            top: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(0,0,0,0.5);
+            overflow: auto;
+        }
+        .modal.show {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+        .modal-content {
+            background: white;
+            border-radius: 15px;
+            padding: 30px;
+            max-width: 700px;
+            width: 90%;
+            max-height: 80vh;
+            display: flex;
+            flex-direction: column;
+            box-shadow: 0 20px 60px rgba(0,0,0,0.3);
+        }
+        .modal-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 20px;
+            padding-bottom: 15px;
+            border-bottom: 2px solid #e0e0e0;
+        }
+        .modal-header h2 {
+            margin: 0;
+            color: #333;
+        }
+        .close {
+            color: #aaa;
+            font-size: 28px;
+            font-weight: bold;
+            cursor: pointer;
+            border: none;
+            background: none;
+            padding: 0;
+            width: 30px;
+            height: 30px;
+        }
+        .close:hover {
+            color: #000;
+        }
+        .browser-path {
+            padding: 10px;
+            background: #f8f9fa;
+            border-radius: 8px;
+            margin-bottom: 15px;
+            font-family: monospace;
+            font-size: 0.9em;
+            word-break: break-all;
+        }
+        .browser-nav {
+            display: flex;
+            gap: 10px;
+            margin-bottom: 15px;
+        }
+        .btn-nav {
+            padding: 8px 16px;
+            border: none;
+            border-radius: 6px;
+            cursor: pointer;
+            font-weight: 600;
+            background: #6c757d;
+            color: white;
+        }
+        .btn-nav:hover:not(:disabled) {
+            background: #5a6268;
+        }
+        .btn-nav:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+        }
+        .browser-list {
+            border: 2px solid #e0e0e0;
+            border-radius: 8px;
+            max-height: 400px;
+            overflow-y: auto;
+            margin-bottom: 15px;
+        }
+        .browser-item {
+            padding: 12px 15px;
+            border-bottom: 1px solid #f0f0f0;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            transition: background 0.2s;
+        }
+        .browser-item:hover {
+            background: #f8f9fa;
+        }
+        .browser-item.selected {
+            background: #e7f3ff;
+            border-left: 4px solid #f5576c;
+        }
+        .browser-item-icon {
+            font-size: 1.2em;
+        }
+        .browser-item-name {
+            flex: 1;
+            font-weight: 500;
+        }
+        .browser-item-badge {
+            padding: 2px 8px;
+            background: #28a745;
+            color: white;
+            border-radius: 12px;
+            font-size: 0.75em;
+            font-weight: 600;
+        }
+        .browser-actions {
+            display: flex;
+            justify-content: flex-end;
+            gap: 10px;
+        }
+        .browser-loading {
+            text-align: center;
+            padding: 40px;
+            color: #666;
+        }
+        .browser-error {
+            padding: 15px;
+            background: #f8d7da;
+            color: #721c24;
+            border-radius: 8px;
+            margin-bottom: 15px;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <a href="/" class="back-btn">← Back to Home</a>
+        <h1>Process Multiple Folders</h1>
+        
+        <form id="processForm">
+            <div class="option-group">
+                <h3>Option 1: Search Parent Folder (Recommended)</h3>
+                <div class="form-group">
+                    <label for="root_folder">Root Folder Path</label>
+                    <div class="input-group">
+                        <input type="text" id="root_folder" name="root_folder" 
+                               value="data/raw/test" placeholder="data/raw/test">
+                        <button type="button" class="btn-browse" onclick="openBrowser('root_folder')">Browse</button>
+                    </div>
+                    <div class="help-text">Click Browse to select folder. Will automatically find all folders with CSV files</div>
+                </div>
+            </div>
+            
+            <div class="option-group">
+                <h3>Option 2: Specify Folders Manually</h3>
+                <div class="form-group">
+                    <label for="folders_list">Folder Paths (comma-separated)</label>
+                    <textarea id="folders_list" name="folders_list" 
+                              placeholder="data/raw/test/cycle_9, data/raw/test/cycle_10"></textarea>
+                    <div class="help-text">Enter folder paths separated by commas, or click "Add Folder" to browse</div>
+                    <div style="margin-top: 10px;">
+                        <button type="button" class="btn-browse" onclick="addFolderToList()" style="background: #17a2b8;">+ Add Folder</button>
+                    </div>
+                </div>
+            </div>
+            
+            <div class="form-group">
+                <label for="results_path">Results Output Path *</label>
+                <div class="input-group">
+                    <input type="text" id="results_path" name="results_path" 
+                           value="data/results/batch_run" required>
+                    <button type="button" class="btn-browse" onclick="openBrowser('results_path')">Browse</button>
+                </div>
+                <div class="help-text">Where to save all results (must be separate from data folders)</div>
+            </div>
+            
+            <div class="form-row">
+                <div class="form-group">
+                    <label for="bsline_length">Baseline Length (seconds)</label>
+                    <input type="number" id="bsline_length" name="bsline_length" value="5" min="1">
+                </div>
+                
+                <div class="form-group">
+                    <label for="event_length">Event Length (seconds)</label>
+                    <input type="number" id="event_length" name="event_length" value="15" min="1">
+                </div>
+            </div>
+            
+            <div class="form-row">
+                <div class="form-group">
+                    <label for="threshold_min_max">Threshold Min/Max</label>
+                    <input type="number" id="threshold_min_max" name="threshold_min_max" value="1" min="0">
+                    <div class="help-text">Percentile threshold for outlier exclusion</div>
+                </div>
+                
+                <div class="form-group">
+                    <label for="threshold_pupil">Threshold Pupil</label>
+                    <input type="number" id="threshold_pupil" name="threshold_pupil" value="2" min="0">
+                    <div class="help-text">Threshold for excluding events</div>
+                </div>
+            </div>
+            
+            <div class="form-group">
+                <div class="checkbox-group">
+                    <input type="checkbox" id="wake_up" name="wake_up">
+                    <label for="wake_up" style="margin: 0;">Wake-to-sleep transition detection</label>
+                </div>
+                <div class="help-text">Unchecked = sleep-to-wake, Checked = wake-to-sleep</div>
+            </div>
+            
+            <div class="form-group">
+                <div class="checkbox-group">
+                    <input type="checkbox" id="plot_traces" name="plot_traces" checked>
+                    <label for="plot_traces" style="margin: 0;">Generate trace plots</label>
+                </div>
+            </div>
+            
+            <div class="form-group">
+                <div class="checkbox-group">
+                    <input type="checkbox" id="save_trace_plot" name="save_trace_plot" checked>
+                    <label for="save_trace_plot" style="margin: 0;">Save trace plots</label>
+                </div>
+            </div>
+            
+            <div class="form-group">
+                <div class="checkbox-group">
+                    <input type="checkbox" id="interactive_plots" name="interactive_plots">
+                    <label for="interactive_plots" style="margin: 0;">Show plots interactively</label>
+                </div>
+                <div class="help-text">Note: Interactive plots are disabled in web mode for better performance</div>
+            </div>
+            
+            <button type="submit" class="btn btn-submit" id="submitBtn">Start Batch Processing</button>
+        </form>
+        
+        <div id="status" class="status"></div>
+    </div>
+    
+    <!-- Folder Browser Modal -->
+    <div id="browserModal" class="modal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h2>Select Folder</h2>
+                <button class="close" onclick="closeBrowser()">&times;</button>
+            </div>
+            <div class="browser-path" id="browserPath">Loading...</div>
+            <div class="browser-nav">
+                <button class="btn-nav" id="btnHome" onclick="navigateTo('.')">Home</button>
+                <button class="btn-nav" id="btnUp" onclick="navigateUp()" disabled>Up</button>
+                <button class="btn-nav" onclick="refreshBrowser()">Refresh</button>
+            </div>
+            <div id="browserError" class="browser-error" style="display: none;"></div>
+            <div class="browser-list" id="browserList">
+                <div class="browser-loading">Loading folders...</div>
+            </div>
+            <div class="browser-actions">
+                <button class="btn-nav" onclick="closeBrowser()" style="background: #6c757d;">Cancel</button>
+                <button class="btn-nav" id="btnSelect" onclick="selectFolder()" style="background: #28a745;" disabled>Select Folder</button>
+            </div>
+        </div>
+    </div>
+    
+    <script>
+        let currentTargetInput = null;
+        let currentPath = '.';
+        let selectedPath = null;
+        let isAddingToList = false;
+        
+        function openBrowser(targetInputId, addToList = false) {
+            currentTargetInput = targetInputId;
+            isAddingToList = addToList;
+            const currentValue = document.getElementById(targetInputId) ? document.getElementById(targetInputId).value : '';
+            currentPath = currentValue || '.';
+            selectedPath = null;
+            document.getElementById('browserModal').classList.add('show');
+            loadDirectory(currentPath);
+        }
+        
+        function closeBrowser() {
+            document.getElementById('browserModal').classList.remove('show');
+            currentTargetInput = null;
+            selectedPath = null;
+            isAddingToList = false;
+        }
+        
+        function navigateTo(path) {
+            currentPath = path;
+            selectedPath = null;
+            loadDirectory(path);
+        }
+        
+        function navigateUp() {
+            if (currentPath && currentPath !== '.' && currentPath !== '/') {
+                const parts = currentPath.split('/');
+                parts.pop();
+                navigateTo(parts.length > 0 ? parts.join('/') : '.');
+            }
+        }
+        
+        function refreshBrowser() {
+            loadDirectory(currentPath);
+        }
+        
+        async function loadDirectory(path) {
+            const listDiv = document.getElementById('browserList');
+            const pathDiv = document.getElementById('browserPath');
+            const errorDiv = document.getElementById('browserError');
+            const btnUp = document.getElementById('btnUp');
+            const btnSelect = document.getElementById('btnSelect');
+            
+            errorDiv.style.display = 'none';
+            listDiv.innerHTML = '<div class="browser-loading">Loading folders...</div>';
+            btnSelect.disabled = true;
+            
+            try {
+                const response = await fetch(`/api/browse?path=${encodeURIComponent(path)}`);
+                const data = await response.json();
+                
+                if (!response.ok) {
+                    throw new Error(data.error || 'Failed to load directory');
+                }
+                
+                currentPath = data.current_path;
+                pathDiv.textContent = data.relative_path || data.current_path;
+                
+                // Enable/disable up button
+                btnUp.disabled = !data.parent_path || data.parent_path === data.current_path;
+                
+                // Clear and populate list
+                listDiv.innerHTML = '';
+                
+                // Add parent directory link
+                if (data.parent_path && data.parent_path !== data.current_path) {
+                    const parentItem = document.createElement('div');
+                    parentItem.className = 'browser-item';
+                    parentItem.onclick = () => navigateTo(data.parent_path);
+                    parentItem.innerHTML = `
+                        <span class="browser-item-icon">📁</span>
+                        <span class="browser-item-name">.. (Parent Directory)</span>
+                    `;
+                    listDiv.appendChild(parentItem);
+                }
+                
+                // Add directories first
+                const dirs = data.items.filter(item => item.is_directory);
+                const files = data.items.filter(item => !item.is_directory);
+                
+                dirs.forEach(item => {
+                    const itemDiv = document.createElement('div');
+                    itemDiv.className = 'browser-item';
+                    itemDiv.onclick = () => {
+                        // Remove previous selection
+                        document.querySelectorAll('.browser-item').forEach(el => el.classList.remove('selected'));
+                        itemDiv.classList.add('selected');
+                        selectedPath = item.relative_path;
+                        btnSelect.disabled = false;
+                        
+                        // Check if folder has CSV files
+                        checkCSVFiles(item.relative_path, itemDiv);
+                    };
+                    
+                    itemDiv.innerHTML = `
+                        <span class="browser-item-icon">📁</span>
+                        <span class="browser-item-name">${item.name}</span>
+                        <span class="browser-item-badge" style="display: none;" id="badge-${item.name.replace(/[^a-zA-Z0-9]/g, '_')}">Has CSV</span>
+                    `;
+                    
+                    // Double click to navigate into folder
+                    itemDiv.ondblclick = () => navigateTo(item.relative_path);
+                    
+                    listDiv.appendChild(itemDiv);
+                    
+                    // Check for CSV files
+                    checkCSVFiles(item.relative_path, itemDiv);
+                });
+                
+                // Add files (for reference, but don't make them selectable)
+                files.slice(0, 5).forEach(item => {
+                    const itemDiv = document.createElement('div');
+                    itemDiv.className = 'browser-item';
+                    itemDiv.style.opacity = '0.5';
+                    itemDiv.innerHTML = `
+                        <span class="browser-item-icon">📄</span>
+                        <span class="browser-item-name">${item.name}</span>
+                    `;
+                    listDiv.appendChild(itemDiv);
+                });
+                
+                if (data.items.length === 0) {
+                    listDiv.innerHTML = '<div class="browser-loading">Directory is empty</div>';
+                }
+                
+            } catch (error) {
+                errorDiv.textContent = `Error: ${error.message}`;
+                errorDiv.style.display = 'block';
+                listDiv.innerHTML = '';
+            }
+        }
+        
+        async function checkCSVFiles(path, itemElement) {
+            try {
+                const response = await fetch(`/api/check-csv?path=${encodeURIComponent(path)}`);
+                const data = await response.json();
+                
+                if (data.has_csv) {
+                    const itemName = itemElement.querySelector('.browser-item-name').textContent;
+                    const badgeId = `badge-${itemName.replace(/[^a-zA-Z0-9]/g, '_')}`;
+                    const badge = itemElement.querySelector(`#${badgeId}`);
+                    if (badge) {
+                        badge.style.display = 'inline-block';
+                    }
+                }
+            } catch (error) {
+                // Silently fail
+            }
+        }
+        
+        function selectFolder() {
+            if (selectedPath && currentTargetInput) {
+                if (isAddingToList) {
+                    // Add to folders_list textarea
+                    const foldersList = document.getElementById('folders_list');
+                    const currentValue = foldersList.value.trim();
+                    if (currentValue) {
+                        foldersList.value = currentValue + ', ' + selectedPath;
+                    } else {
+                        foldersList.value = selectedPath;
+                    }
+                    closeBrowser();
+                } else {
+                    // Set directly to input
+                    const targetInput = document.getElementById(currentTargetInput);
+                    if (targetInput) {
+                        targetInput.value = selectedPath;
+                    }
+                    closeBrowser();
+                }
+            }
+        }
+        
+        function addFolderToList() {
+            openBrowser('folders_list', true);
+        }
+        
+        // Close modal when clicking outside
+        window.onclick = function(event) {
+            const modal = document.getElementById('browserModal');
+            if (event.target === modal) {
+                closeBrowser();
+            }
+        }
+        
+        // Original form submission code
+        const form = document.getElementById('processForm');
+        const statusDiv = document.getElementById('status');
+        const submitBtn = document.getElementById('submitBtn');
+        
+        form.addEventListener('submit', async (e) => {
+            e.preventDefault();
+            
+            // Disable button
+            submitBtn.disabled = true;
+            submitBtn.textContent = 'Processing...';
+            
+            // Get form data
+            const formData = {
+                root_folder: document.getElementById('root_folder').value,
+                folders_list: document.getElementById('folders_list').value,
+                results_path: document.getElementById('results_path').value,
+                bsline_length: parseInt(document.getElementById('bsline_length').value),
+                event_length: parseInt(document.getElementById('event_length').value),
+                threshold_min_max: parseInt(document.getElementById('threshold_min_max').value),
+                threshold_pupil: parseInt(document.getElementById('threshold_pupil').value),
+                wake_up: document.getElementById('wake_up').checked,
+                plot_traces: document.getElementById('plot_traces').checked,
+                save_trace_plot: document.getElementById('save_trace_plot').checked,
+                interactive_plots: false // Always false in web mode
+            };
+            
+            try {
+                // Start processing
+                const response = await fetch('/api/process/batch', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify(formData)
+                });
+                
+                const data = await response.json();
+                
+                if (!response.ok) {
+                    throw new Error(data.error || 'Failed to start processing');
+                }
+                
+                // Show status and poll for updates
+                showStatus('info', 'Processing started...');
+                pollStatus();
+                
+            } catch (error) {
+                showStatus('error', error.message);
+                submitBtn.disabled = false;
+                submitBtn.textContent = 'Start Batch Processing';
+            }
+        });
+        
+        function showStatus(type, message) {
+            statusDiv.className = `status ${type} show`;
+            statusDiv.innerHTML = `<div class="status-progress">${message}</div>`;
+        }
+        
+        function pollStatus() {
+            const interval = setInterval(async () => {
+                try {
+                    const response = await fetch('/api/status');
+                    const status = await response.json();
+                    
+                    let statusHtml = `<div class="status-progress">${status.progress || 'Processing...'}</div>`;
+                    statusDiv.innerHTML = statusHtml;
+                    
+                    if (status.error) {
+                        showStatus('error', `Error: ${status.error}`);
+                        clearInterval(interval);
+                        submitBtn.disabled = false;
+                        submitBtn.textContent = 'Start Batch Processing';
+                    } else if (status.completed) {
+                        showStatus('success', '✅ Batch processing completed successfully!');
+                        clearInterval(interval);
+                        submitBtn.disabled = false;
+                        submitBtn.textContent = 'Start Batch Processing';
+                    } else if (!status.running && !status.error && !status.completed) {
+                        showStatus('success', '✅ Processing completed!');
+                        clearInterval(interval);
+                        submitBtn.disabled = false;
+                        submitBtn.textContent = 'Start Batch Processing';
+                    }
+                } catch (error) {
+                    console.error('Error polling status:', error);
+                }
+            }, 1000); // Poll every second
+        }
+    </script>
+</body>
+</html>

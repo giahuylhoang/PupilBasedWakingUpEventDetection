@@ -17,6 +17,8 @@ data/
 !init.sh
 !run_individual.sh
 !run_batch.sh
+!run_webapp.sh
+!push_webapp.sh
 
 # Distribution / packaging
 .Python
@@ -154,3 +156,9 @@ cython_debug/
 *.swp
 *.swo
 
+# Flask
+__pycache__/
+*.py[cod]
+*$py.class
+instance/
+.webassets-cache
