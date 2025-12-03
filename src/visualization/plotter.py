@@ -1,6 +1,12 @@
-import matplotlib.pyplot as plt
 import matplotlib
-matplotlib.use('TkAgg')  # Use a non-interactive backend for saving plots
+# Set non-interactive backend for saving plots (important for web/server use)
+# Note: matplotlib.use() must be called before importing pyplot
+# If backend is already set (e.g., by webapp), this will be ignored silently
+try:
+    matplotlib.use('Agg')  # Non-interactive backend for saving plots
+except (ValueError, ImportError):
+    pass  # Backend already set or Agg not available, continue with current backend
+import matplotlib.pyplot as plt
 from ipywidgets import interact, FloatSlider
 import numpy as np
 from src.utils.utilities import (detect_sudden_change_events, calculate_properties_possible_events, find_skewed_quadratic_extremum_index)

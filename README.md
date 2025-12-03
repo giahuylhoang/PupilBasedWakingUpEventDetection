@@ -76,7 +76,33 @@ If you prefer to set up manually:
 
 ## Running the Analysis
 
-### Run Individual Analysis
+### Web Interface (Recommended for Easy Use)
+
+The easiest way to run analyses is through the web interface:
+
+1. **Start the web server:**
+   ```bash
+   chmod +x run_webapp.sh
+   ./run_webapp.sh
+   ```
+
+2. **Open your web browser:**
+   - The app will start on `http://localhost:5000` (or the next available port)
+   - The terminal will show the exact URL to use
+
+3. **Use the web interface:**
+   - **Individual Processing**: Process a single folder with interactive folder browser
+   - **Batch Processing**: Process multiple folders at once
+   - **No command line needed!** Just click "Browse" to select folders and fill in parameters
+
+**Features:**
+- ✅ Interactive folder browser (no need to type paths manually)
+- ✅ Visual indicators for folders containing CSV files
+- ✅ Real-time processing status updates
+- ✅ Easy parameter configuration through forms
+- ✅ Supports both individual and batch processing
+
+### Run Individual Analysis (Command Line)
 
 The simplest way to run an analysis:
 

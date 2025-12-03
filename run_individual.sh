@@ -16,7 +16,6 @@ THRESHOLD_TO_EXCLUDE_FROM_MIN_MAX=1 # Percentile threshold for outlier exclusion
 THRESHOLD_MID_LINE=0.5
 # Example: If set to 1, values outside 1st-99th percentiles are excluded
 
-
 THRESHOLD_TO_EXCLUDE_BASE_ON_PUPIL=2 # Threshold for excluding events based on pupil trace outliers
 # Example: If set to 2, events where the top 20% of pupil values > 2 or bottom 20% < -2 are excluded
 # Set to a very high value to effectively disable this exclusion

@@ -1,5 +1,11 @@
 import os
 import sys
+
+# Set matplotlib backend BEFORE any imports that might use it
+# This is critical for web applications that run in threads
+import matplotlib
+matplotlib.use('Agg')  # Non-interactive backend for web/server use
+
 from flask import Flask, render_template, request, jsonify, session
 from threading import Thread
 import time
