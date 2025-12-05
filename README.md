@@ -5,19 +5,27 @@ A Python-based analysis tool for detecting waking up events based on pupil data 
 ## Prerequisites
 
 - **Python 3.7 or higher** (Python 3.8+ recommended)
-- **macOS or Linux** operating system
-- **Bash shell** (default on macOS and most Linux distributions)
+- **macOS, Linux, or Windows** operating system
+- **Bash shell** (macOS/Linux) or **Command Prompt/PowerShell** (Windows)
 
 ### Check Prerequisites
 
 Before setting up, check if you have everything needed:
 
+**On macOS/Linux:**
 ```bash
 chmod +x check_prerequisites.sh
 ./check_prerequisites.sh
 ```
 
-If Python is not installed, see **[INSTALL_PYTHON.md](INSTALL_PYTHON.md)** for detailed installation instructions.
+**On Windows:**
+```cmd
+check_prerequisites.bat
+```
+
+If Python is not installed:
+- **macOS/Linux**: See **[INSTALL_PYTHON.md](INSTALL_PYTHON.md)** for detailed installation instructions
+- **Windows**: See **[INSTALL_WINDOWS.md](INSTALL_WINDOWS.md)** for Windows-specific installation instructions
 
 ## Quick Setup
 
@@ -30,12 +38,24 @@ If Python is not installed, see **[INSTALL_PYTHON.md](INSTALL_PYTHON.md)** for d
    ```
 
 2. **Run the setup script (it handles everything):**
+
+   **On macOS/Linux:**
    ```bash
    chmod +x setup.sh
    ./setup.sh
    ```
 
-   The `setup.sh` script automatically:
+   **On Windows:**
+   ```cmd
+   setup.bat
+   ```
+   
+   Or using PowerShell (better error handling):
+   ```powershell
+   powershell -ExecutionPolicy Bypass -File setup.ps1
+   ```
+
+   The setup script automatically:
    - ✓ Checks if Python 3 is installed (if not, shows installation instructions)
    - ✓ Checks for pip and venv (tries to auto-install if missing)
    - ✓ Creates a virtual environment
@@ -43,7 +63,7 @@ If Python is not installed, see **[INSTALL_PYTHON.md](INSTALL_PYTHON.md)** for d
    - ✓ Verifies all packages are working correctly
    - ✓ Provides clear error messages if anything is missing
    
-   **Note:** If Python 3 is not installed, the script will detect your OS and show you exactly how to install it. After installing Python, just run `./setup.sh` again.
+   **Note:** If Python 3 is not installed, the script will detect your OS and show you exactly how to install it. After installing Python, just run the setup script again.
 
 3. **Test the setup:**
    ```bash
@@ -58,21 +78,31 @@ If Python is not installed, see **[INSTALL_PYTHON.md](INSTALL_PYTHON.md)** for d
 
 If you prefer to set up manually:
 
-1. **Initialize the environment:**
-   ```bash
-   source init.sh
-   ```
+**On macOS/Linux:**
+```bash
+source init.sh
+```
 
-   This script will:
-   - Create a virtual environment if it doesn't exist
-   - Install dependencies from `requirements.txt`
-   - Set up PYTHONPATH automatically
+**On Windows:**
+```cmd
+init.bat
+```
 
-2. **Verify installation:**
-   ```bash
-   python3 --version
-   pip list
-   ```
+This script will:
+- Create a virtual environment if it doesn't exist
+- Install dependencies from `requirements.txt`
+- Set up PYTHONPATH automatically
+
+**Verify installation:**
+```bash
+# macOS/Linux
+python3 --version
+pip list
+
+# Windows
+python --version
+pip list
+```
 
 ## Running the Analysis
 
@@ -81,9 +111,16 @@ If you prefer to set up manually:
 The easiest way to run analyses is through the web interface:
 
 1. **Start the web server:**
+   
+   **On macOS/Linux:**
    ```bash
    chmod +x run_webapp.sh
    ./run_webapp.sh
+   ```
+   
+   **On Windows:**
+   ```cmd
+   run_webapp.bat
    ```
 
 2. **Open your web browser:**
@@ -106,13 +143,23 @@ The easiest way to run analyses is through the web interface:
 
 The simplest way to run an analysis:
 
+**On macOS/Linux:**
 ```bash
 ./run_individual.sh -d "data/raw/test/cycle_9"
 ```
 
+**On Windows:**
+```cmd
+run_individual.bat -d "data\raw\test\cycle_9"
+```
+
 **Full usage:**
 ```bash
+# macOS/Linux
 ./run_individual.sh -d <data_folder_path> [options]
+
+# Windows
+run_individual.bat -d <data_folder_path> [options]
 ```
 
 **Required arguments:**
@@ -130,6 +177,8 @@ The simplest way to run an analysis:
 - `--wake_up <true|false>`: True for wake-to-sleep, False for sleep-to-wake (default: false)
 
 **Example:**
+
+**On macOS/Linux:**
 ```bash
 ./run_individual.sh \
   -d "data/raw/test/cycle_9" \
@@ -139,21 +188,68 @@ The simplest way to run an analysis:
   --wake_up false
 ```
 
+**On Windows:**
+```cmd
+run_individual.bat -d "data\raw\test\cycle_9" -r "data\results\test\cycle_9" --bsline_length 10 --event_length 20 --wake_up false
+```
+
+### Run Batch Analysis (Command Line)
+
+Process multiple folders at once:
+
+**On macOS/Linux:**
+```bash
+# Process all folders with CSV files in a directory
+./run_batch.sh -r "data/raw/test" -o "data/results/batch_run"
+
+# Process specific folders
+./run_batch.sh --folders "data/raw/test/cycle_9" "data/raw/test/cycle_10" -o "data/results/batch_run"
+```
+
+**On Windows:**
+```cmd
+REM Process all folders with CSV files in a directory
+run_batch.bat -r "data\raw\test" -o "data\results\batch_run"
+
+REM Process specific folders
+run_batch.bat --folders "data\raw\test\cycle_9" "data\raw\test\cycle_10" -o "data\results\batch_run"
+```
+
+**Batch processing options:**
+- `-r` or `--root_folder`: Parent folder to search for all folders containing CSV files
+- `--folders`: List of specific folders to process (alternative to `-r`)
+- `-o` or `--output`: Output folder for results (required, must be separate from data folders)
+- All other options are the same as individual processing (see above)
+
 ### Using Python Script Directly
 
 If you prefer to run the Python script directly:
 
 1. **Activate the environment first:**
+   
+   **On macOS/Linux:**
    ```bash
    source init.sh
    ```
+   
+   **On Windows:**
+   ```cmd
+   init.bat
+   ```
 
 2. **Run the script:**
+   
+   **On macOS/Linux:**
    ```bash
    python3 scripts/run_individual.py "data/raw/test/cycle_9" \
      --results_folder "data/results/test/cycle_9" \
      --bsline_length 10 \
      --event_length 20
+   ```
+   
+   **On Windows:**
+   ```cmd
+   python scripts\run_individual.py "data\raw\test\cycle_9" --results_folder "data\results\test\cycle_9" --bsline_length 10 --event_length 20
    ```
 
 ## Input Data Format
@@ -186,6 +282,7 @@ Results are saved to the specified results folder and include:
 
 To quickly test if the setup works on another computer after pulling from git:
 
+**On macOS/Linux:**
 ```bash
 # 1. Make scripts executable (if needed)
 chmod +x setup.sh test_setup.sh init.sh run_individual.sh
@@ -195,6 +292,15 @@ chmod +x setup.sh test_setup.sh init.sh run_individual.sh
 
 # 3. Test everything is working
 ./test_setup.sh
+```
+
+**On Windows:**
+```cmd
+REM 1. Run the setup
+setup.bat
+
+REM 2. Test everything is working (if test_setup.bat exists)
+test_setup.bat
 ```
 
 The `test_setup.sh` script will check:
@@ -213,13 +319,22 @@ If all tests pass, you're good to go!
 If you get an error about Python 3 not being found:
 
 1. **Run the prerequisite checker:**
+   
+   **On macOS/Linux:**
    ```bash
    ./check_prerequisites.sh
    ```
+   
+   **On Windows:**
+   ```cmd
+   check_prerequisites.bat
+   ```
+   
    This will detect your OS and show specific installation instructions.
 
 2. **Or see the detailed guide:**
-   - See **[INSTALL_PYTHON.md](INSTALL_PYTHON.md)** for comprehensive installation instructions
+   - **macOS/Linux**: See **[INSTALL_PYTHON.md](INSTALL_PYTHON.md)** for comprehensive installation instructions
+   - **Windows**: See **[INSTALL_WINDOWS.md](INSTALL_WINDOWS.md)** for Windows-specific installation instructions
 
 3. **Quick installation commands:**
 
@@ -286,17 +401,22 @@ If package installation fails:
 
 ```
 PupilBasedWakingUpEventDetection/
-├── init.sh                  # Environment initialization script
-├── setup.sh                 # First-time setup script
-├── run_individual.sh        # Main analysis script
-├── requirements.txt         # Python dependencies
-├── README.md               # This file
+├── init.sh / init.bat              # Environment initialization script
+├── setup.sh / setup.bat / setup.ps1 # First-time setup script
+├── run_individual.sh / run_individual.bat  # Individual analysis script
+├── run_batch.sh / run_batch.bat            # Batch processing script
+├── run_webapp.sh / run_webapp.bat         # Web application script
+├── check_prerequisites.sh / check_prerequisites.bat  # Prerequisites checker
+├── requirements.txt                # Python dependencies
+├── README.md                        # This file
+├── INSTALL_PYTHON.md               # Python installation guide (macOS/Linux)
+├── INSTALL_WINDOWS.md              # Windows installation guide
 ├── scripts/
-│   ├── run_individual.py   # Main Python analysis script
-│   └── run_batch.py        # Batch processing script
+│   ├── run_individual.py           # Main Python analysis script
+│   └── run_batch.py                # Batch processing script
 ├── src/
 │   ├── data/
-│   │   └── data_loader.py  # Data loading utilities
+│   │   └── data_loader.py          # Data loading utilities
 │   ├── utils/
 │   │   ├── data_processing.py
 │   │   ├── event_detection.py
@@ -304,17 +424,18 @@ PupilBasedWakingUpEventDetection/
 │   └── visualization/
 │       └── plotter.py
 └── data/
-    ├── raw/                # Input data files
-    └── results/            # Output results
+    ├── raw/                         # Input data files
+    └── results/                     # Output results
 ```
 
 ## Contributing
 
 When contributing to this project:
 
-1. Make sure your code works on both macOS and Linux
-2. Test the setup process from a fresh clone
+1. Make sure your code works on macOS, Linux, and Windows
+2. Test the setup process from a fresh clone on all supported platforms
 3. Update this README if you add new features or change the setup process
+4. For Windows-specific changes, test with both batch files (.bat) and PowerShell scripts (.ps1)
 
 ## License
 
