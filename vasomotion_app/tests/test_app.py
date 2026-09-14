@@ -552,3 +552,47 @@ def test_spectrum_scaling_with_multitaper_shows_error_not_traceback():
     assert not at.exception
     errors = [e.value for e in at.error]
     assert any("scaling='spectrum' is undefined for method 'multitaper_welch'" in e for e in errors)
+
+
+@requires_sample_file
+def test_compare_methods_with_raw_periodogram_preset_does_not_crash():
+    """CRITICAL fix-wave item 2. Exact three-click repro from the review:
+    upload -> preset 'Raw periodogram' -> tick 'Compare methods'. The
+    multiselect's shipped default is ["periodogram", "multitaper_welch"],
+    and 'Raw periodogram' sets psd.nperseg=None (periodogram has no window
+    length of its own) -- before this fix, building
+    PSDParams(method="multitaper_welch", nperseg=None) and handing it to
+    compute_psd hit a bare `int(None)` and raised an uncaught TypeError
+    that the compare-methods loop's `except ValueError` could not catch,
+    aborting the whole script before "Download parameters.json" and
+    "Download everything (.zip)" ever rendered."""
+    at = _upload_sample_and_configure(_fresh_app())
+    _selectbox(at, "Preset").set_value("Raw periodogram")
+    at.run()
+    assert not at.exception
+
+    _checkbox(at, "Compare methods").set_value(True)
+    at.run()
+    assert not at.exception
+
+    assert "Compare methods" in [h.value for h in at.header]
+
+    # Stronger than "did not crash": the comparison must actually succeed,
+    # not merely fail gracefully. compute_psd's own None-guard (turning the
+    # crash into a caught ValueError) is necessary but not sufficient on
+    # its own -- without app.py also substituting a valid window length for
+    # the compared Welch-family method, this would land here with a caught
+    # "Could not compute 'multitaper_welch' for comparison" error and no
+    # percent_diff table, which is a regression this assertion catches
+    # that "no exception" alone would not.
+    assert not any("Could not compute" in e.value for e in at.error)
+    comparison_tables = [
+        d.value for d in at.dataframe if "percent_diff" in getattr(d.value, "columns", [])
+    ]
+    assert len(comparison_tables) == 1
+
+    download_labels = {b.label for b in at.download_button}
+    assert {
+        "Download band summary (CSV)", "Download full PSD (CSV)",
+        "Download parameters.json", "Download everything (.zip)",
+    } <= download_labels

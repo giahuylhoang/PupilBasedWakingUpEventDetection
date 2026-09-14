@@ -153,7 +153,23 @@ def compute_psd(signal: np.ndarray, fs: float, params: PSDParams) -> tuple[np.nd
         return _tapered_average(spectrum_fn, tapers)
 
     # Welch-family: 'welch' and 'multitaper_welch' both segment the trace
-    # via nperseg/noverlap before spectral averaging.
+    # via nperseg/noverlap before spectral averaging -- unlike periodogram/
+    # multitaper_thomson (whose one "window" is the whole trace, so they
+    # have no such parameter), neither has a meaningful value to fall back
+    # to on its own, so None is a caller error, not a computable default.
+    # Guarded explicitly (rather than left to `int(None)`) so this reaches
+    # the caller as the same validated ValueError every other bad input
+    # here does, not a bare TypeError with no offending value named.
+    if params.nperseg is None:
+        raise ValueError(
+            f"nperseg is required for method {params.method!r} (a Welch-family method needs a "
+            "window length in samples); got None."
+        )
+    if params.noverlap is None:
+        raise ValueError(
+            f"noverlap is required for method {params.method!r} (a Welch-family method needs a "
+            "segment overlap in samples); got None."
+        )
     nperseg = int(params.nperseg)
     noverlap = int(params.noverlap)
     validate_window_length(nperseg, n)

@@ -648,8 +648,28 @@ else:
         band_tables = {}
         comparison_ok = True
         for m in compare_methods:
+            m_nperseg = psd_params.nperseg
+            m_noverlap = psd_params.noverlap
+            if m in ("welch", "multitaper_welch") and m_nperseg is None:
+                # The currently-selected method has no window length of its
+                # own (e.g. "Raw periodogram": method="periodogram",
+                # nperseg=None) -- psd_params.nperseg is that method's
+                # value, not this compared method's, so it must not be
+                # carried over as-is. compute_psd now rejects nperseg=None
+                # for every Welch-family method with a ValueError (instead
+                # of a bare TypeError from int(None)), so without this,
+                # ticking "Compare methods" with the shipped default
+                # selection (["periodogram", "multitaper_welch"]) under the
+                # "Raw periodogram" preset would still fail here -- just
+                # with a caught, readable error instead of a crash. A
+                # window length valid for THIS method is substituted
+                # instead: PSDParams' own dataclass default (256), capped
+                # to the trace length so it is never invalid on a short
+                # trace, with a matching 50%-overlap noverlap.
+                m_nperseg = min(PSDParams().nperseg, n_samples_each)
+                m_noverlap = m_nperseg // 2
             p = PSDParams(
-                method=m, nperseg=psd_params.nperseg, noverlap=psd_params.noverlap,
+                method=m, nperseg=m_nperseg, noverlap=m_noverlap,
                 window=psd_params.window, nw=psd_params.nw, k=psd_params.k,
                 zero_pad=psd_params.zero_pad, scaling=psd_params.scaling,
             )

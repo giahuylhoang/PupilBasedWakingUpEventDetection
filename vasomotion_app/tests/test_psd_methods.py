@@ -185,6 +185,29 @@ def test_compute_psd_welch_raises_when_window_exceeds_trace():
         compute_psd(signal, 10.0, params)
 
 
+def test_compute_psd_welch_rejects_none_nperseg():
+    """CRITICAL fix-wave item 2. Before this fix, a Welch-family method
+    with nperseg=None (e.g. carried over from a method that has none, like
+    periodogram) hit a bare `int(None)` and raised an uncaught TypeError --
+    reproduced directly against the pre-fix code below. compute_psd must
+    raise the same kind of validated ValueError every other bad input here
+    does, naming the method, so a caller that only catches ValueError (as
+    app.py's compare-methods loop does) is not blindsided."""
+    signal = _sine_signal()
+    params = PSDParams(method="multitaper_welch", nperseg=None, noverlap=None, nw=3.0, k=5)
+    with pytest.raises(ValueError, match="nperseg is required for method 'multitaper_welch'"):
+        compute_psd(signal, FS, params)
+
+
+def test_compute_psd_welch_rejects_none_noverlap():
+    # Symmetric case: nperseg given, noverlap left None. Previously crashed
+    # the same way (`int(None)`, just one line later) -- fixed the same way.
+    signal = _sine_signal()
+    params = PSDParams(method="welch", nperseg=200, noverlap=None, window="hann")
+    with pytest.raises(ValueError, match="noverlap is required for method 'welch'"):
+        compute_psd(signal, FS, params)
+
+
 def test_compute_psd_welch_rejects_unknown_window():
     # VALID_WINDOWS is a business-rule allowlist narrower than everything
     # scipy.signal.windows.get_window would accept (e.g. "flattop" is a real
