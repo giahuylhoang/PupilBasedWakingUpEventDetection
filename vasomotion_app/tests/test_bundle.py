@@ -155,7 +155,14 @@ def test_build_parameters_dict_and_json_roundtrip_modified_values():
     # Every value disagrees with the Gordon lab default preset, so a round
     # trip (or a build_parameters_dict) that silently substituted preset/
     # default values for the ones actually passed in is caught field by
-    # field, not just by incidental whole-dict equality.
+    # field, not just by incidental whole-dict equality. method="welch" is
+    # the one method that reads `window` (asserted below as "blackman",
+    # unmolested) but never reads `nw`/`k` -- fix-wave item 3 nulls those
+    # two in the export precisely because this method ignores them, so
+    # their expected value here is None, not the 2.0/2 passed in. That is
+    # not "silently substituting a default" (PSDParams' own defaults are
+    # 3.0/5, not None): a regression back to reporting *any* specific
+    # number here -- 2.0/2, or 3.0/5 -- would still fail this assertion.
     psd_params = PSDParams(
         method="welch", nperseg=128, noverlap=32, window="blackman",
         nw=2.0, k=2, zero_pad=4, scaling="spectrum",
@@ -183,8 +190,69 @@ def test_build_parameters_dict_and_json_roundtrip_modified_values():
     assert reloaded["fs"] == 7.5
     assert reloaded["psd"] == {
         "method": "welch", "nperseg": 128, "noverlap": 32, "window": "blackman",
-        "nw": 2.0, "k": 2, "zero_pad": 4, "scaling": "spectrum",
+        "nw": None, "k": None, "zero_pad": 4, "scaling": "spectrum",
     }
+
+
+def test_build_parameters_dict_nulls_fields_the_method_does_not_consume():
+    """IMPORTANT fix-wave item 3. `compute_psd` only reads `window` for
+    method="welch" (periodogram hardcodes a boxcar; the two multitaper
+    methods use a DPSS taper bank, not any single named window), and only
+    reads `nw`/`k` for the two multitaper methods (confirmed by reading
+    psd_methods.compute_psd) -- a field the selected method ignores must
+    not be exported as though it were used. One case per method, each
+    with every one of window/nw/k set to an unmistakable non-default
+    value, so a field that should be nulled but isn't would be caught
+    immediately rather than by coincidence."""
+    base_kwargs = dict(
+        signal_type="area", normalize="dx_x0_median", detrend_method="linear",
+        highpass_cutoff=0.005, highpass_order=4, trim_seconds=0.0,
+        max_freq=0.5, xscale="log", bands={"x": (0.01, 0.1)}, fs=2.0,
+    )
+
+    periodogram_psd = build_parameters_dict(
+        psd_params=PSDParams(
+            method="periodogram", nperseg=None, noverlap=None, window="blackman",
+            nw=7.0, k=9, zero_pad=1, scaling="density",
+        ),
+        **base_kwargs,
+    )["psd"]
+    assert periodogram_psd["window"] is None
+    assert periodogram_psd["nw"] is None
+    assert periodogram_psd["k"] is None
+
+    welch_psd = build_parameters_dict(
+        psd_params=PSDParams(
+            method="welch", nperseg=200, noverlap=100, window="hamming",
+            nw=7.0, k=9, zero_pad=1, scaling="density",
+        ),
+        **base_kwargs,
+    )["psd"]
+    assert welch_psd["window"] == "hamming"  # the one method that DOES read window
+    assert welch_psd["nw"] is None
+    assert welch_psd["k"] is None
+
+    multitaper_welch_psd = build_parameters_dict(
+        psd_params=PSDParams(
+            method="multitaper_welch", nperseg=200, noverlap=100, window="hamming",
+            nw=4.0, k=7, zero_pad=1, scaling="density",
+        ),
+        **base_kwargs,
+    )["psd"]
+    assert multitaper_welch_psd["window"] is None
+    assert multitaper_welch_psd["nw"] == 4.0
+    assert multitaper_welch_psd["k"] == 7
+
+    multitaper_thomson_psd = build_parameters_dict(
+        psd_params=PSDParams(
+            method="multitaper_thomson", nperseg=None, noverlap=None, window="hamming",
+            nw=4.0, k=7, zero_pad=1, scaling="density",
+        ),
+        **base_kwargs,
+    )["psd"]
+    assert multitaper_thomson_psd["window"] is None
+    assert multitaper_thomson_psd["nw"] == 4.0
+    assert multitaper_thomson_psd["k"] == 7
 
 
 # ---------------------------------------------------------------------------

@@ -114,7 +114,35 @@ def build_parameters_dict(
     JSON has no tuple type, so `parameters_from_json` always returns lists
     for them, and a tuple here would make an otherwise-correct round trip
     compare unequal to itself (`(0.005, 0.04) != [0.005, 0.04]` in Python).
+
+    `window`/`nw`/`k` are nulled here whenever `psd_params.method` does not
+    actually consume them (confirmed by reading psd_methods.compute_psd):
+    `window` matters only for method="welch" (every other method either
+    hardcodes a boxcar -- periodogram -- or uses a DPSS taper bank instead
+    of any single named window -- the two multitaper methods); `nw`/`k`
+    matter only for the two multitaper methods. `psd_params` itself is
+    NOT modified -- app.py deliberately keeps window/nw/k at their last
+    real configured value across a method switch that hides their widget,
+    so a preset's or a settings file's declared value for a
+    currently-inapplicable field survives if the user switches back (see
+    app.py's own module docstring, "Fix round 2"). That is a UI-continuity
+    concern, orthogonal to this one: parameters.json is a record of what a
+    specific run actually used, and a field the selected method ignores
+    must not be exported as though it mattered for that run -- e.g.
+    Method=welch, Window=blackman, then Method switched to periodogram
+    actually runs a boxcar, not blackman, no matter what the Window widget
+    (invisible for periodogram) still shows. Nulling the field here, at
+    the export boundary only, is the same treatment `nperseg`/`noverlap`
+    already get for periodogram/multitaper_thomson (which have no window
+    length of their own): every method's "psd" sub-dict keeps the same
+    eight keys, and `_push_settings_into_widgets`'s "if psd.get(x) is not
+    None" guard on every one of these fields already treats a null as
+    "nothing to restore" rather than a value to apply.
     """
+    exported_window = psd_params.window if psd_params.method == "welch" else None
+    _multitaper_methods = ("multitaper_welch", "multitaper_thomson")
+    exported_nw = psd_params.nw if psd_params.method in _multitaper_methods else None
+    exported_k = psd_params.k if psd_params.method in _multitaper_methods else None
     return {
         "app_version": APP_VERSION,
         "fs": fs,
@@ -128,9 +156,9 @@ def build_parameters_dict(
             "method": psd_params.method,
             "nperseg": psd_params.nperseg,
             "noverlap": psd_params.noverlap,
-            "window": psd_params.window,
-            "nw": psd_params.nw,
-            "k": psd_params.k,
+            "window": exported_window,
+            "nw": exported_nw,
+            "k": exported_k,
             "zero_pad": psd_params.zero_pad,
             "scaling": psd_params.scaling,
         },

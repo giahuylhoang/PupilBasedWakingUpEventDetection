@@ -472,16 +472,24 @@ def test_nan_explanation_does_not_appear_when_no_band_is_nan():
 # --- fix round 2 (a defect introduced by fix round 1's own refactor) ----
 
 def test_raw_periodogram_preset_exports_true_window_not_hardcoded_fallback():
-    """Regression guard for the Fix-round-2 defect. The Window function
-    widget only exists `if method == "welch"`; before this fix, `window`
-    fell back to a hardcoded "hann" literal whenever that widget wasn't
-    instantiated, silently discarding whatever a preset or a loaded
-    settings file actually declared. "Raw periodogram" declares
+    """Regression guard for the Fix-round-2 defect, updated for fix-wave
+    item 3 (see bundle.build_parameters_dict's docstring for the full
+    rationale -- "this is the third round on this class"). The Window
+    function widget only exists `if method == "welch"`; before round 2's
+    fix, `window` fell back to a hardcoded "hann" literal whenever that
+    widget wasn't instantiated, silently discarding whatever a preset or a
+    loaded settings file actually declared -- "Raw periodogram" declares
     window="boxcar" (PRESETS["Raw periodogram"]["psd"]["window"]) while
-    method="periodogram" never shows that widget -- parameters.json used
-    to report "hann" regardless. compute_psd ignores `window` for every
-    method except "welch" (confirmed by reading psd_methods.py), so this
-    is a metadata-fidelity fix only; no PSD value changes."""
+    method="periodogram" never shows that widget. Round 2 fixed the
+    WIDGET/PSDParams layer to keep remembering "boxcar" (asserted below,
+    unchanged) -- but round 2 then also let that same "boxcar" leak into
+    the EXPORTED parameters.json, which item 3 corrects: compute_psd never
+    reads `window` for periodogram at all (it hardcodes a boxcar
+    internally, taken from no field of `params`), so exporting any window
+    value for this run -- "hann", "boxcar", or anything else -- would
+    misreport a field that did not affect what ran. The exported value is
+    now null, not a literal that happens to coincide with what silently
+    ran."""
     at = _fresh_app()
     _selectbox(at, "Preset").set_value("Raw periodogram")
     at.run()
@@ -500,28 +508,39 @@ def test_raw_periodogram_preset_exports_true_window_not_hardcoded_fallback():
         bands={"x": (0.01, 0.1)}, fs=FS,
     )
     reloaded = bundle.parameters_from_json(bundle.parameters_to_json(parameters))
-    assert reloaded["psd"]["window"] == "boxcar"
+    assert reloaded["psd"]["window"] is None
 
 
-def test_non_default_nw_k_survive_export_under_method_without_that_widget():
-    """The latent form of the same defect: the NW/K widgets only exist
-    `if method in ("multitaper_welch", "multitaper_thomson")`. A loaded
-    settings file specifying method="welch" with non-default nw=7.0/k=9
-    (moot for welch's own computation, but still real configured metadata
-    -- exactly the shape "Raw periodogram" itself uses for nw/k, just with
-    non-default numbers no built-in preset happens to exercise) must
-    round-trip through parameters.json unchanged rather than silently
-    reporting the hardcoded nw=3.0/k=5 fallback."""
+def test_legacy_settings_file_with_moot_nw_k_still_reloads_them():
+    """The latent form of the same defect, updated for fix-wave item 3.
+    The NW/K widgets only exist `if method in ("multitaper_welch",
+    "multitaper_thomson")`; round 2 fixed the WIDGET layer to keep
+    remembering a configured nw/k across a switch to a method that hides
+    them. Item 3 now nulls nw/k at EXPORT time for a method that ignores
+    them (here, "welch"), so the app itself can no longer produce a
+    downloaded parameters.json with method="welch" and a non-null nw/k --
+    which means this scenario can no longer be built via
+    bundle.build_parameters_dict, unlike the original round-2 test. It can
+    still arrive as a hand-edited or older-app-version settings file,
+    though, and `_push_settings_into_widgets`'s reload logic (a distinct
+    concern from what THIS app chooses to export -- see
+    build_parameters_dict's docstring) makes no method-conditional
+    judgement about whether to restore a field; it restores whatever is
+    present and non-null. This constructs such a file directly (not via
+    build_parameters_dict, which would null nw/k right back out) and
+    confirms the widgets still pick up nw=7.0/k=9 rather than silently
+    reporting the nw=3.0/k=5 widget defaults."""
     at = _fresh_app()
-    params_in = bundle.build_parameters_dict(
-        signal_type="area", normalize="dx_x0_median", detrend_method="linear",
-        highpass_cutoff=0.005, highpass_order=4, trim_seconds=0.0,
-        psd_params=PSDParams(
-            method="welch", nperseg=256, noverlap=128, window="hamming",
-            nw=7.0, k=9, zero_pad=1, scaling="density",
-        ),
-        max_freq=0.5, xscale="log", bands={"x": (0.01, 0.1)}, fs=FS,
-    )
+    params_in = {
+        "app_version": bundle.APP_VERSION, "fs": FS, "signal_type": "area",
+        "normalize": "dx_x0_median", "detrend": "linear", "highpass_cutoff": 0.005,
+        "highpass_order": 4, "trim_seconds": 0.0,
+        "psd": {
+            "method": "welch", "nperseg": 256, "noverlap": 128, "window": "hamming",
+            "nw": 7.0, "k": 9, "zero_pad": 1, "scaling": "density",
+        },
+        "max_freq": 0.5, "xscale": "log", "bands": {"x": [0.01, 0.1]},
+    }
     payload = bundle.parameters_to_json(params_in).encode("utf-8")
     _settings_uploader(at).set_value(("nwk_settings.json", payload, "application/json"))
     at.run()
