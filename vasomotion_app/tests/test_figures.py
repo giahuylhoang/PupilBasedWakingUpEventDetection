@@ -189,6 +189,20 @@ def test_plot_group_average_labels_title_and_scales(xscale, yscale):
     plt.close(fig)
 
 
+def test_plot_group_average_defaults_to_log_log_scale():
+    # Fix round 1, Finding 1: test_plot_group_average_labels_title_and_scales
+    # above always passes xscale/yscale explicitly, so it exercises the
+    # override path but never the *default* parameter values. PSD data
+    # spans decades; a silent flip of the default to linear would make the
+    # ultra-low band -- the one this tool exists to measure -- unreadable,
+    # and nothing would object. This test calls with no xscale/yscale at all.
+    fig = plot_group_average(_basic_table(), region="R1")
+    ax = fig.axes[0]
+    assert ax.get_xscale() == "log"
+    assert ax.get_yscale() == "log"
+    plt.close(fig)
+
+
 # ---------------------------------------------------------------------------
 # plot_per_animal_small_multiples
 # ---------------------------------------------------------------------------
@@ -266,6 +280,21 @@ def test_plot_per_animal_small_multiples_raises_for_region_with_no_data():
         plot_per_animal_small_multiples(table, region="R2")
 
 
+def test_plot_per_animal_small_multiples_uses_log_log_scale():
+    # Fix round 1, Finding 1: scale here is hardcoded (not a parameter), so
+    # there is no override path to distinguish from a default -- check at
+    # least one visible subplot's axes directly.
+    table = pd.concat(
+        [_animal_table("R1", "pre", 1, 1.0), _animal_table("R1", "pre", 2, 2.0)],
+        ignore_index=True,
+    )
+    fig = plot_per_animal_small_multiples(table, region="R1", max_freq=0.5)
+    visible_axes = [ax for ax in fig.axes if ax.get_visible()]
+    assert visible_axes[0].get_xscale() == "log"
+    assert visible_axes[0].get_yscale() == "log"
+    plt.close(fig)
+
+
 # ---------------------------------------------------------------------------
 # plot_method_comparison
 # ---------------------------------------------------------------------------
@@ -323,6 +352,16 @@ def test_plot_method_comparison_raises_for_missing_condition():
 def test_plot_method_comparison_raises_for_empty_psd_tables():
     with pytest.raises(ValueError, match="psd_tables"):
         plot_method_comparison({}, region="R1", condition="pre")
+
+
+def test_plot_method_comparison_uses_log_log_scale():
+    # Fix round 1, Finding 1: scale here is hardcoded (not a parameter).
+    tables = {"methodA": _animal_table("R1", "pre", 1, 1.0)}
+    fig = plot_method_comparison(tables, region="R1", condition="pre", max_freq=0.5)
+    ax = fig.axes[0]
+    assert ax.get_xscale() == "log"
+    assert ax.get_yscale() == "log"
+    plt.close(fig)
 
 
 # ---------------------------------------------------------------------------

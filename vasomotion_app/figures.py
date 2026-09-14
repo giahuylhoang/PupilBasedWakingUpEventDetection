@@ -55,6 +55,12 @@ def plot_group_average(
     fig, ax = plt.subplots(figsize=(7, 5))
     for condition, cond_df in sub.groupby("condition", sort=True):
         pivot = cond_df.pivot_table(index="frequency", columns="animal", values="power").sort_index()
+        # n_animals: total distinct animals in this condition, for the "n="
+        # legend label. n_present: animals actually present at each specific
+        # frequency row, for the SEM denominator below. These differ under
+        # ragged frequency coverage -- see the SEM note in this function's
+        # docstring -- so n_animals must never be substituted into the SEM
+        # calculation below.
         n_animals = pivot.shape[1]
         mean = pivot.mean(axis=1)
         n_present = pivot.count(axis=1)
