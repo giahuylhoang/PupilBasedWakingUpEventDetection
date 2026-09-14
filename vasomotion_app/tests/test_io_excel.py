@@ -1,6 +1,9 @@
 """Tests for vasomotion_app.io_excel."""
 from __future__ import annotations
 
+import math
+from pathlib import Path
+
 import openpyxl
 import pytest
 
@@ -9,6 +12,15 @@ from vasomotion_app.io_excel import (
     detect_sheet_structure,
     load_workbook_long,
     parse_sheet_name,
+)
+
+# The real sample workbook this tool is built for. Tests that read it are
+# skipped (not failed) in a checkout that doesn't have the data directory.
+REAL_WORKBOOK = (
+    Path(__file__).resolve().parents[2]
+    / "data"
+    / "Tim"
+    / "Vasomotion analysis compilation_Bal K.xlsx"
 )
 
 
@@ -120,8 +132,34 @@ def test_load_workbook_long_non_numeric_cell_raises(tmp_path):
     assert v["value"] == "oops"
 
 
-def test_real_sample_file_sheet_names():
-    result = detect_sheet_structure(["SpVB pre", "SpVB TMX", "SmFP pre", "SmFP TMX"])
-    assert result["all_parsed"] is True
-    assert result["regions"] == ["SmFP", "SpVB"]
-    assert result["conditions"] == ["TMX", "pre"]
+def test_load_workbook_long_blank_cell_raises(tmp_path):
+    wb = openpyxl.Workbook()
+    wb.remove(wb.active)
+    _write_sheet(wb, "RegionA condA", [101, 102], ["M", "F"], [[10, None], [11, 21]])
+    path = tmp_path / "blank.xlsx"
+    wb.save(path)
+    with pytest.raises(NonNumericDataError) as excinfo:
+        load_workbook_long(str(path))
+    assert len(excinfo.value.violations) == 1
+    v = excinfo.value.violations[0]
+    assert v["sheet"] == "RegionA condA"
+    assert v["animal_id"] == 102
+    assert v["row"] == 1
+    assert math.isnan(v["value"])
+
+
+@pytest.mark.skipif(
+    not REAL_WORKBOOK.exists(),
+    reason="sample workbook not present in this checkout",
+)
+def test_real_sample_file_sheet_names_and_shape():
+    wb = openpyxl.load_workbook(str(REAL_WORKBOOK), read_only=True)
+    try:
+        sheet_names = wb.sheetnames
+    finally:
+        wb.close()
+    assert sheet_names == ["SpVB pre", "SpVB TMX", "SmFP pre", "SmFP TMX"]
+
+    df = load_workbook_long(str(REAL_WORKBOOK))
+    assert list(df.columns) == ["animal", "sex", "region", "condition", "sample", "value"]
+    assert df.shape == (28152, 6)

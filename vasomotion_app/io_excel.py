@@ -13,6 +13,10 @@ import pandas as pd
 class NonNumericDataError(Exception):
     """Raised when the workbook contains a non-numeric value in a data cell.
 
+    A blank/missing cell (read back as NaN) counts as a violation too, the
+    same as text or any other non-numeric content -- it is reported rather
+    than silently written into the output as `NaN`.
+
     `violations` is a list of dicts, one per bad cell, each with keys
     'sheet', 'animal_id', 'row', 'value' -- so every offending cell can be
     reported at once instead of failing on the first one found.
@@ -75,7 +79,8 @@ def load_workbook_long(
     to `parse_sheet_name`. A ValueError is raised naming any sheet whose
     region/condition could not be determined either way.
 
-    Raises NonNumericDataError if any data cell is not numeric, listing every
+    Raises NonNumericDataError if any data cell is not numeric -- including a
+    blank/missing cell, which pandas reads back as NaN -- listing every
     offending cell (sheet, animal_id, row) rather than stopping at the first.
     """
     sheets = pd.read_excel(path, sheet_name=None, header=None, engine="openpyxl")
@@ -108,7 +113,11 @@ def load_workbook_long(
         for col_pos, (animal_id, sex) in enumerate(zip(animal_ids, sexes), start=1):
             col_values = raw.iloc[2:, col_pos].tolist()
             for sample, value in zip(samples, col_values):
-                if not isinstance(value, (int, float)) or isinstance(value, bool):
+                if (
+                    not isinstance(value, (int, float))
+                    or isinstance(value, bool)
+                    or pd.isna(value)
+                ):
                     violations.append(
                         {
                             "sheet": sheet_name,
