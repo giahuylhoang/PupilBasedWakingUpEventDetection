@@ -63,6 +63,28 @@ def validate_window_length(window_length: int, n_samples: int) -> None:
         raise ValueError(f"window length {window_length} exceeds trace length {n_samples}")
 
 
+def validate_scaling(method: str, scaling: str) -> None:
+    """`scaling='spectrum'` is undefined for a DPSS taper bank.
+
+    scipy's spectrum scaling normalises by 1/window.sum()**2 (against
+    density's 1/(fs*sum(window**2))). That is well-defined for a boxcar or
+    a named single window (sum(window) > 0), but odd-indexed DPSS tapers
+    are antisymmetric -- their elements cancel and sum() lands near zero
+    (~3.6e-15 in float64) purely from floating-point noise, not signal --
+    so 1/window.sum()**2 explodes into a near-arbitrary huge number
+    (~1e26-1e31 observed) instead of anything meaningful. There is no
+    standard per-taper coherent-gain correction this function invents on
+    your behalf; the combination is simply rejected.
+    """
+    if scaling == "spectrum" and method in ("multitaper_welch", "multitaper_thomson"):
+        raise ValueError(
+            f"scaling='spectrum' is undefined for method {method!r}: a DPSS taper bank has no "
+            "well-defined spectrum-scaling normalisation (odd-indexed tapers are antisymmetric "
+            "and sum to ~0, so scipy's 1/window.sum()**2 factor blows up per-taper instead of "
+            f"producing a meaningful power value). Use scaling='density' with {method!r} instead."
+        )
+
+
 def window_summary(n_samples: int, fs: float, window_length: int, noverlap: int) -> dict:
     """Live readout for the sidebar: frequency resolution and number of
     Welch segments available to average, for a given window length."""
@@ -112,6 +134,7 @@ def compute_psd(signal: np.ndarray, fs: float, params: PSDParams) -> tuple[np.nd
         raise ValueError(f"method must be one of {VALID_METHODS}, got {params.method!r}")
     if params.scaling not in VALID_SCALINGS:
         raise ValueError(f"scaling must be one of {VALID_SCALINGS}, got {params.scaling!r}")
+    validate_scaling(params.method, params.scaling)
 
     if params.method in ("periodogram", "multitaper_thomson"):
         nfft = _nfft(n, params.zero_pad)

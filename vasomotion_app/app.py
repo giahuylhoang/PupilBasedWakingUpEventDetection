@@ -541,6 +541,17 @@ else:
             st.error(str(exc))
             st.stop()
 
+    # scaling="spectrum" is undefined for a DPSS taper bank (psd_methods.
+    # validate_scaling) -- compute_psd already raises this same ValueError,
+    # but checking it here too means the message appears immediately and
+    # on its own, the same way an over-long window does above, rather than
+    # only after run_pipeline has already preprocessed every trace.
+    try:
+        psd_methods.validate_scaling(psd_params.method, psd_params.scaling)
+    except ValueError as exc:
+        st.error(str(exc))
+        st.stop()
+
     # Defect 2 & 3: validate_band_edges is deliberately not called inside
     # bundle.run_pipeline (see bundle.py's module docstring) -- this is the
     # one place its warnings reach a user, so the call stays here, right

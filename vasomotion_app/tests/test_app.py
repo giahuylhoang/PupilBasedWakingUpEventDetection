@@ -531,3 +531,24 @@ def test_non_default_nw_k_survive_export_under_method_without_that_widget():
     psd_params = at.session_state["_test_psd_params"]
     assert psd_params.nw == 7.0
     assert psd_params.k == 9
+
+
+# --- final fix wave (whole-branch review) --------------------------------
+
+
+@requires_sample_file
+def test_spectrum_scaling_with_multitaper_shows_error_not_traceback():
+    """CRITICAL fix-wave item 1's app-level wiring. multitaper_welch is the
+    shipped default method, and 'spectrum' is a selectable Scaling option
+    -- before the psd_methods.py fix, that combination silently computed
+    power values ~1e26-1e31 too large, with no exception, no warning, no
+    NaN. After compute_psd raises ValueError for it, this confirms app.py
+    surfaces that as a plain st.error (proactively, before run_pipeline
+    ever runs), not as an uncaught exception."""
+    at = _upload_sample_and_configure(_fresh_app())
+    assert _selectbox(at, "Method").value == "multitaper_welch"  # the shipped default
+    _selectbox(at, "Scaling").set_value("spectrum")
+    at.run()
+    assert not at.exception
+    errors = [e.value for e in at.error]
+    assert any("scaling='spectrum' is undefined for method 'multitaper_welch'" in e for e in errors)

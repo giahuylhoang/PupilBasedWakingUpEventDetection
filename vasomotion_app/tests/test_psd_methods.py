@@ -10,6 +10,7 @@ from vasomotion_app.psd_methods import (
     compute_psd,
     compute_psd_table,
     validate_k_nw,
+    validate_scaling,
     validate_window_length,
     window_summary,
 )
@@ -71,6 +72,90 @@ def test_compute_psd_multitaper_welch_peak():
     idx = int(np.argmax(power))
     assert freqs[idx] == pytest.approx(1.0)
     assert power[idx] == pytest.approx(7.717106260491967, rel=1e-4)
+
+
+def test_compute_psd_periodogram_peak_spectrum_scaling():
+    """CRITICAL fix-wave item 1. Before this fix, `scaling='spectrum'` was
+    never numerically exercised anywhere in the suite for ANY method --
+    this is the first test that computes it at all.
+
+    Hand-derived, not copied from a run of this function: scipy's
+    'spectrum' scaling factor is 1/window.sum()**2, against 'density's
+    1/(fs*sum(window**2)); for a boxcar window (periodogram) of length N,
+    window.sum() == sum(window**2) == N, so the ratio of the two scale
+    factors is exactly fs/N. For a real sinusoid of amplitude A landing
+    exactly on a frequency bin (no leakage, as this fixture guarantees),
+    'spectrum' scaling is defined precisely so the peak reports the
+    sinusoid's actual power, A**2/2 -- independent of N, fs, or window --
+    which is what is asserted below, not a magic float."""
+    signal = _sine_signal()
+    params = PSDParams(method="periodogram", zero_pad=1, scaling="spectrum")
+    freqs, power = compute_psd(signal, FS, params)
+    assert freqs.shape == (1281,)
+    idx = int(np.argmax(power))
+    assert freqs[idx] == pytest.approx(1.0)
+    assert power[idx] == pytest.approx(AMPLITUDE**2 / 2, rel=1e-4)
+
+
+def test_compute_psd_welch_peak_spectrum_scaling():
+    """Same closed-form invariant as the periodogram test above, now with
+    an actual tapered (Hann) window rather than a boxcar, proving the
+    result isn't an accident of window.sum() == sum(window**2). A 200-
+    sample Hann window has sum(window)=100.0 and sum(window**2)=75.0 (both
+    independently confirmable from scipy.signal.windows.hann, not from
+    this module), giving a scale-factor ratio of (fs*75)/100**2 = 0.075;
+    'spectrum' scaling is defined so this still reports the sinusoid's
+    true power, A**2/2, at its peak bin -- the same 2.0 as the boxcar
+    case above, regardless of which window shaped it."""
+    signal = _sine_signal()
+    params = PSDParams(
+        method="welch", nperseg=200, noverlap=100, window="hann", zero_pad=1, scaling="spectrum",
+    )
+    freqs, power = compute_psd(signal, FS, params)
+    assert freqs.shape == (101,)
+    idx = int(np.argmax(power))
+    assert freqs[idx] == pytest.approx(1.0)
+    assert power[idx] == pytest.approx(AMPLITUDE**2 / 2, rel=1e-4)
+
+
+def test_compute_psd_multitaper_welch_rejects_spectrum_scaling():
+    """CRITICAL fix-wave item 1. Odd-indexed DPSS tapers are antisymmetric
+    (sum to ~3.6e-15, not 0, purely from float noise), so scipy's
+    'spectrum' scale factor 1/window.sum()**2 explodes to ~1e26-1e31
+    instead of raising, warning, or NaN-ing -- reproduced directly against
+    the pre-fix code: multitaper_welch peak was 1.2702673942106048e+29 for
+    this exact fixture. compute_psd must now refuse the combination
+    outright rather than ever computing such a number."""
+    signal = _sine_signal()
+    params = PSDParams(
+        method="multitaper_welch", nperseg=200, noverlap=100, nw=3.0, k=5, scaling="spectrum",
+    )
+    with pytest.raises(ValueError, match=r"scaling='spectrum' is undefined for method 'multitaper_welch'"):
+        compute_psd(signal, FS, params)
+
+
+def test_compute_psd_multitaper_thomson_rejects_spectrum_scaling():
+    """Companion to the multitaper_welch rejection above -- reproduced
+    directly against the pre-fix code: multitaper_thomson peak was
+    3.6181858492571562e+25 for this exact fixture."""
+    signal = _sine_signal()
+    params = PSDParams(method="multitaper_thomson", nw=3.0, k=5, scaling="spectrum")
+    with pytest.raises(ValueError, match=r"scaling='spectrum' is undefined for method 'multitaper_thomson'"):
+        compute_psd(signal, FS, params)
+
+
+def test_validate_scaling_rejects_both_multitaper_methods():
+    with pytest.raises(ValueError, match=r"multitaper_welch"):
+        validate_scaling("multitaper_welch", "spectrum")
+    with pytest.raises(ValueError, match=r"multitaper_thomson"):
+        validate_scaling("multitaper_thomson", "spectrum")
+
+
+def test_validate_scaling_allows_density_for_multitaper_and_any_scaling_for_single_window():
+    validate_scaling("multitaper_welch", "density")  # must not raise
+    validate_scaling("multitaper_thomson", "density")  # must not raise
+    validate_scaling("periodogram", "spectrum")  # must not raise
+    validate_scaling("welch", "spectrum")  # must not raise
 
 
 def test_compute_psd_zero_padding_doubles_grid():
