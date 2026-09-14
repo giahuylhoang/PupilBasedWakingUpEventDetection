@@ -44,9 +44,34 @@ Defect 1 was found under:
 5. The NW number input previously allowed values as low as 0.5, but K's
    range is 1..2*NW-1: any NW below 1.0 makes that range empty (max < min),
    which crashes the whole app with an uncaught StreamlitAPIException the
-   moment such an NW is chosen (reproduced empirically while building this
-   file). Raised NW's minimum to 1.0, the true lower bound for a non-empty K
-   range, rather than special-casing the crash.
+   moment such an NW is chosen (confirmed against streamlit 1.63.0: the
+   brief's original code raises StreamlitValueBelowMinError). Fixed with
+   two independent, overlapping protections, either of which alone already
+   prevents the crash: NW's widget minimum raised to 1.0 (the true lower
+   bound for a non-empty K range -- at NW=1.0, 2*NW-1=1, so K=1 is always
+   valid), and K's own `max(int(2*NW-1), 1)` floor, which guards the same
+   case if NW ever reached the K-range computation below 1.0 by some other
+   path (e.g. a hand-edited parameters.json). K is also actively clamped
+   down to that ceiling (`if k_input > k_max: k_input = k_max`, not merely
+   left to Streamlit's own default handling) whenever a still-larger K
+   survives a drop in NW, so it never resets to 1 except when 1 truly is
+   the only valid value (NW=1.0).
+
+Fix round 1 (see the report for the full review) added a sixth fix, in the
+same "a control that silently does nothing" family as Defect 1:
+
+6. Selecting a preset used to change the *computed* PSD method/window/
+   bands correctly while the Advanced widgets (Method, Window length, NW,
+   ...) kept showing whatever had been set by hand before the preset was
+   picked -- a bench scientist reading the sidebar, not the downloaded
+   parameters.json, would record the wrong method in a methods section.
+   Fixed by writing a selected preset's values into the same widget
+   session_state keys `_apply_loaded_settings` already uses (extracted
+   into the shared `_push_settings_into_widgets`), the first time that
+   preset is selected, and by removing the separate "use the preset dict
+   instead of the widgets" branch entirely: `psd_params`/`band_defs` are
+   now always built from the widgets, so a preset can only ever act by
+   seeding them, never by silently overriding them behind their backs.
 
 Also: every matplotlib Figure this file creates or receives from another
 module is closed once it has been displayed and/or written into the results
@@ -91,10 +116,13 @@ DEFAULT_BAND_ROWS = [
 ]
 
 
-def _apply_loaded_settings(loaded: dict) -> None:
-    """Push every restorable field of a parameters dict (as produced by
-    bundle.build_parameters_dict / parameters_from_json) into the
-    session_state keys the corresponding widgets below are keyed on.
+def _push_settings_into_widgets(settings: dict) -> None:
+    """Push the preprocessing/PSD/output fields shared by a parameters dict
+    and a PRESETS[name] entry (both have the same "normalize", "detrend",
+    "highpass_cutoff", "highpass_order", "trim_seconds", "psd", "max_freq",
+    "xscale", "bands" sub-shape -- a preset entry simply omits "fs",
+    "signal_type", and "app_version") into the session_state keys the
+    corresponding widgets below are keyed on.
 
     Must run before any of those widgets are instantiated in this script
     run -- Streamlit widgets read `st.session_state[key]` as their current
@@ -102,30 +130,33 @@ def _apply_loaded_settings(loaded: dict) -> None:
     otherwise, so setting it earlier in the same run is enough; no rerun is
     needed. `bands` is handled separately (see `_pending_band_rows` below)
     because st.data_editor refuses session_state writes outright.
+
+    Shared by `_apply_loaded_settings` (a full parameters.json reload) and
+    `_apply_preset_to_widgets` (Finding 1's fix: selecting a preset must
+    make these same widgets redraw showing what will actually run, not
+    leave them showing whatever was set by hand before the preset was
+    picked while the preset's values are what actually get computed).
+    Neither touches "preset_select" or "fs"/"signal_type" -- callers own
+    those directly, since a preset must never touch fs or signal_type (no
+    preset sets signal_type -- squaring diameter data is silently wrong)
+    and only a full settings reload should force the dropdown back to
+    "(custom)".
     """
     ss = st.session_state
-    ss["preset_select"] = "(custom)"  # a raw settings file is not a named preset
-    if loaded.get("fs") is not None:
-        ss["fs_input"] = float(loaded["fs"])
-    signal_type = loaded.get("signal_type")
-    if signal_type == "area":
-        ss["signal_type_radio"] = "Area"
-    elif signal_type == "diameter":
-        ss["signal_type_radio"] = "Diameter"
-    if loaded.get("normalize") is not None:
-        ss["normalize_select"] = loaded["normalize"]
-    if loaded.get("detrend") is not None:
-        ss["detrend_select"] = loaded["detrend"]
-    cutoff = loaded.get("highpass_cutoff")
+    if settings.get("normalize") is not None:
+        ss["normalize_select"] = settings["normalize"]
+    if settings.get("detrend") is not None:
+        ss["detrend_select"] = settings["detrend"]
+    cutoff = settings.get("highpass_cutoff")
     ss["highpass_on_checkbox"] = cutoff is not None
     if cutoff is not None:
         ss["highpass_cutoff_input"] = float(cutoff)
-    if loaded.get("highpass_order") is not None:
-        ss["highpass_order_input"] = int(loaded["highpass_order"])
-    if loaded.get("trim_seconds") is not None:
-        ss["trim_seconds_input"] = float(loaded["trim_seconds"])
+    if settings.get("highpass_order") is not None:
+        ss["highpass_order_input"] = int(settings["highpass_order"])
+    if settings.get("trim_seconds") is not None:
+        ss["trim_seconds_input"] = float(settings["trim_seconds"])
 
-    psd = loaded.get("psd") or {}
+    psd = settings.get("psd") or {}
     if psd.get("method") is not None:
         ss["method_select"] = psd["method"]
     if psd.get("nperseg") is not None:
@@ -138,9 +169,10 @@ def _apply_loaded_settings(loaded: dict) -> None:
     if nw is not None:
         ss["nw_input"] = float(nw)
     if psd.get("k") is not None:
-        # K's own widget caps at 2*NW-1 for whatever NW this settings file
-        # also restores; clamp here so a stale/edited (nw, k) pair from an
-        # older file can never hand that widget an out-of-range value.
+        # K's own widget caps at 2*NW-1 for whatever NW this dict also
+        # restores; clamp here so a stale/edited (nw, k) pair from an
+        # older file, or an inconsistent preset, can never hand that
+        # widget an out-of-range value.
         k_max = max(int(2 * float(nw if nw is not None else 3.0) - 1), 1)
         ss["k_input"] = min(int(psd["k"]), k_max)
     if psd.get("zero_pad") is not None:
@@ -148,12 +180,12 @@ def _apply_loaded_settings(loaded: dict) -> None:
     if psd.get("scaling") is not None:
         ss["scaling_select"] = psd["scaling"]
 
-    if loaded.get("max_freq") is not None:
-        ss["max_freq_input"] = float(loaded["max_freq"])
-    if loaded.get("xscale") is not None:
-        ss["xscale_radio"] = loaded["xscale"]
+    if settings.get("max_freq") is not None:
+        ss["max_freq_input"] = float(settings["max_freq"])
+    if settings.get("xscale") is not None:
+        ss["xscale_radio"] = settings["xscale"]
 
-    bands = loaded.get("bands")
+    bands = settings.get("bands")
     if bands:
         ss["_pending_band_rows"] = [
             {"band": name, "lower_hz": float(edges[0]), "upper_hz": float(edges[1])}
@@ -166,6 +198,43 @@ def _apply_loaded_settings(loaded: dict) -> None:
         # argument (the restored rows) is honoured because the key has never
         # been seen before.
         ss["band_editor_gen"] = ss.get("band_editor_gen", 0) + 1
+
+
+def _apply_loaded_settings(loaded: dict) -> None:
+    """Restore a full parameters.json reload: forces the preset dropdown
+    back to "(custom)" (a raw settings file is not a named preset) and
+    restores fs/signal_type directly (never touched by a preset), then
+    delegates the rest to `_push_settings_into_widgets`."""
+    ss = st.session_state
+    ss["preset_select"] = "(custom)"
+    if loaded.get("fs") is not None:
+        ss["fs_input"] = float(loaded["fs"])
+    signal_type = loaded.get("signal_type")
+    if signal_type == "area":
+        ss["signal_type_radio"] = "Area"
+    elif signal_type == "diameter":
+        ss["signal_type_radio"] = "Diameter"
+    _push_settings_into_widgets(loaded)
+
+
+def _apply_preset_to_widgets(preset_name: str) -> None:
+    """Finding 1 (fix round 1): make a just-selected preset's Advanced
+    widgets redraw showing what will actually run. Before this fix,
+    selecting a preset changed the *computed* PSD method/window/bands
+    (correctly) while the Method/Window length/NW/... widgets kept
+    showing whatever had been set by hand before the preset was picked --
+    reproduced by the reviewer: set Method to "welch" by hand, select
+    "Gordon lab default", and the Method selectbox still read "welch"
+    while the results demonstrably came from multitaper_welch.
+    parameters.json was always correct (it records the resolved values,
+    not the widgets), so this was a display bug, not a reproducibility
+    bug -- but a bench scientist reads the sidebar, not the downloaded
+    JSON, before writing a methods section.
+
+    Does not touch "fs" or "signal_type" (no preset ever sets either) or
+    "preset_select" (the widget that called this already reflects the
+    just-chosen preset by the normal selectbox mechanism)."""
+    _push_settings_into_widgets(bundle_module.PRESETS[preset_name])
 
 
 with st.sidebar:
@@ -222,6 +291,16 @@ with st.sidebar:
     preset_name = st.selectbox(
         "Preset", options=["(custom)"] + list(bundle_module.PRESETS.keys()), key="preset_select"
     )
+    # Finding 1: applied once per distinct preset selection (guarded by
+    # _last_applied_preset), not on every rerun -- otherwise a later,
+    # deliberate hand-edit of e.g. Method while the same preset name stays
+    # selected would be silently overwritten back on the very next rerun.
+    if preset_name != "(custom)":
+        if st.session_state.get("_last_applied_preset") != preset_name:
+            _apply_preset_to_widgets(preset_name)
+            st.session_state["_last_applied_preset"] = preset_name
+    else:
+        st.session_state["_last_applied_preset"] = None
 
     with st.expander("Advanced: preprocessing"):
         st.session_state.setdefault("normalize_select", "dx_x0_median")
@@ -316,27 +395,24 @@ with st.sidebar:
             default=["periodogram", "multitaper_welch"],
         )
 
-    if preset_name != "(custom)":
-        preset = bundle_module.PRESETS[preset_name]
-        normalize = preset["normalize"]
-        detrend_method = preset["detrend"]
-        highpass_cutoff = preset["highpass_cutoff"]
-        highpass_order = preset["highpass_order"]
-        trim_seconds = preset["trim_seconds"]
-        psd_params = bundle_module.psd_params_from_dict(preset["psd"])
-        max_freq = preset["max_freq"]
-        xscale = preset["xscale"]
-        band_defs = {name: tuple(edges) for name, edges in preset["bands"].items()}
-    else:
-        psd_params = PSDParams(
-            method=method, nperseg=nperseg, noverlap=noverlap, window=window,
-            nw=nw, k=k, zero_pad=zero_pad, scaling=scaling,
-        )
-        band_defs = {
-            row["band"]: (row["lower_hz"], row["upper_hz"])
-            for _, row in band_rows.iterrows()
-            if row["band"]
-        }
+    # Finding 1: psd_params/band_defs (and normalize/detrend_method/
+    # highpass_*/trim_seconds/max_freq/xscale, already assigned directly by
+    # the widgets above) are now ALWAYS built from the widgets -- there is
+    # no separate "use the preset dict instead" branch any more. A preset
+    # only seeds those widgets' session_state, just above, the first time
+    # it is selected; it never bypasses them for the actual computation.
+    # This is what makes the sidebar's displayed values and what
+    # run_pipeline actually uses identical by construction, rather than by
+    # convention that a future edit could silently break again.
+    psd_params = PSDParams(
+        method=method, nperseg=nperseg, noverlap=noverlap, window=window,
+        nw=nw, k=k, zero_pad=zero_pad, scaling=scaling,
+    )
+    band_defs = {
+        row["band"]: (row["lower_hz"], row["upper_hz"])
+        for _, row in band_rows.iterrows()
+        if row["band"]
+    }
     # Exposed purely so tests can confirm which bands are actually in effect
     # (a data_editor's resulting DataFrame has no other introspection path
     # under streamlit.testing.v1 in this version -- confirmed empirically).

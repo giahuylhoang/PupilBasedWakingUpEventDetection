@@ -24,6 +24,17 @@ just the absence of an exception:
 - two crash-shaped inputs (a malformed settings file, an out-of-range NW)
   degrading to an error message or a clamp instead of an uncaught exception
 
+Fix round 1 (review findings) added four more:
+
+- selecting a preset after a manual edit updates the Advanced widgets'
+  *displayed* values, not just the numbers computed underneath them
+  (Finding 1)
+- no module except app.py imports streamlit, discovered dynamically so a
+  module added later is covered automatically (Finding 2)
+- periodogram/multitaper_thomson (no `nperseg`) still get a band-edge
+  warning when one is due, via the trace-length fallback (Finding 3)
+- the NaN-band explanation does not appear when nothing is actually NaN
+
 `st.pyplot` renders a static image with no queryable scale, and
 `streamlit.testing.v1` has no typed accessor for `st.data_editor`, so
 app.py stashes the actual Figure objects and the resolved band dict into
@@ -339,3 +350,109 @@ def test_nw_minimum_prevents_invalid_k_range_crash():
     at.run()
     assert not at.exception
     assert _number_input(at, "NW").value >= 1.0
+
+
+# --- fix round 1 (review findings) ---------------------------------------
+
+def test_selecting_preset_updates_method_selectbox_after_manual_edit():
+    """Regression guard for Finding 1. Reproduced by the reviewer: set
+    Method to "welch" by hand, then select "Gordon lab default" -- before
+    this fix the Method selectbox still read "welch" while the results
+    demonstrably came from multitaper_welch (parameters.json was always
+    correct; only the sidebar's displayed value was stale). Selecting a
+    preset must make the widget redraw showing what will actually run."""
+    at = _fresh_app()
+    _selectbox(at, "Method").set_value("welch")
+    at.run()
+    assert _selectbox(at, "Method").value == "welch"
+
+    _selectbox(at, "Preset").set_value("Gordon lab default")
+    at.run()
+    assert not at.exception
+    assert _selectbox(at, "Method").value == "multitaper_welch"
+    assert _number_input(at, "Window length (samples)").value == 256
+    assert _number_input(at, "Overlap (samples)").value == 128
+    assert _number_input(at, "NW").value == 3.0
+
+
+def test_no_module_except_app_imports_streamlit():
+    """Architectural guard for Finding 2. Design spec: "The analysis core
+    does not import Streamlit." Discovers vasomotion_app/*.py dynamically
+    (not a hardcoded list) so a module added later is covered
+    automatically. Scoped to the top-level package files -- not
+    vasomotion_app/tests/, which legitimately imports streamlit.testing to
+    drive AppTest; that is test infrastructure, not the analysis core this
+    constraint protects. Reproduced against the actual bug: adding `import
+    streamlit` to a scratch copy of figures.py makes this fail, naming
+    figures.py, while the rest of the suite stays green (see task-8-report.md,
+    Fix round 1)."""
+    import ast
+    import pathlib
+
+    package_dir = pathlib.Path(__file__).resolve().parent.parent
+    assert package_dir.name == "vasomotion_app"
+
+    def _imports_streamlit(path: pathlib.Path) -> bool:
+        tree = ast.parse(path.read_text(), filename=str(path))
+        for node in ast.walk(tree):
+            if isinstance(node, ast.Import):
+                if any(a.name == "streamlit" or a.name.startswith("streamlit.") for a in node.names):
+                    return True
+            elif isinstance(node, ast.ImportFrom):
+                if node.module and (node.module == "streamlit" or node.module.startswith("streamlit.")):
+                    return True
+        return False
+
+    offenders = [
+        path.name for path in sorted(package_dir.glob("*.py"))
+        if path.name != "app.py" and _imports_streamlit(path)
+    ]
+    assert offenders == [], f"streamlit imported outside app.py in: {offenders}"
+
+
+@requires_sample_file
+def test_band_edge_warning_fires_under_periodogram_for_out_of_range_band():
+    """Regression guard for Finding 3. periodogram/multitaper_thomson have
+    no `nperseg` (they use the whole trace as their one window), so
+    app.py's window_length fallback (trace length instead of nperseg) must
+    still be consulted for those methods, not silently skipped -- reverting
+    to the brief's original `if psd_params.nperseg is not None:` gate
+    around the whole validate_band_edges call would make this go silent.
+    At fs=2.0 Hz with the real sample file's 1173 samples, the whole-trace
+    resolvable minimum is 2/1173 ~= 0.0017 Hz; a band edge below that must
+    still warn under periodogram."""
+    at = _upload_sample_and_configure(_fresh_app())
+    params = bundle.build_parameters_dict(
+        signal_type="area", normalize="dx_x0_median", detrend_method="linear",
+        highpass_cutoff=0.005, highpass_order=4, trim_seconds=0.0,
+        psd_params=PSDParams(
+            method="periodogram", nperseg=None, noverlap=None, window="boxcar",
+            nw=3.0, k=5, zero_pad=1, scaling="density",
+        ),
+        max_freq=0.5, xscale="log", bands={"tiny": (0.0005, 0.001)}, fs=FS,
+    )
+    payload = bundle.parameters_to_json(params).encode("utf-8")
+    _settings_uploader(at).set_value(("periodogram_settings.json", payload, "application/json"))
+    at.run()
+    assert not at.exception
+    assert _selectbox(at, "Method").value == "periodogram"
+    assert at.session_state["_test_band_defs"] == {"tiny": (0.0005, 0.001)}
+
+    warnings = [w.value for w in at.warning]
+    assert any("tiny" in w and "resolvable minimum" in w for w in warnings)
+
+
+@requires_sample_file
+def test_nan_explanation_does_not_appear_when_no_band_is_nan():
+    """Mutation guard: the NaN-band explanation is gated on `if nan_bands:`
+    (app.py) -- a mutation to `if True:` would leave the rest of the suite
+    green, since every other NaN-related test only checks the explanation
+    DOES appear when a band genuinely is NaN. Gordon lab default's own two
+    bands are both fully resolvable on the real sample file (confirmed by
+    test_end_to_end.py -- zero NaNs), so no explanation should appear."""
+    at = _upload_sample_and_configure(_fresh_app())
+    _selectbox(at, "Preset").set_value("Gordon lab default")
+    at.run()
+    assert not at.exception
+    info_texts = [i.value for i in at.info]
+    assert not any("blank cells" in t for t in info_texts)
