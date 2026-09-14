@@ -35,11 +35,22 @@ Fix round 1 (review findings) added four more:
   warning when one is due, via the trace-length fallback (Finding 3)
 - the NaN-band explanation does not appear when nothing is actually NaN
 
+Fix round 2 (a defect introduced by fix round 1's own preset refactor)
+added two more: `window`/`nw`/`k` used to fall back to a hardcoded literal
+whenever their widget wasn't instantiated for the current method (e.g.
+"Raw periodogram" sets window="boxcar", but periodogram never shows the
+Window function widget, so parameters.json reported "hann"). Covered by a
+test selecting that preset and a second test covering the latent form
+(non-default nw/k surviving export under a method that hides their
+widget too).
+
 `st.pyplot` renders a static image with no queryable scale, and
 `streamlit.testing.v1` has no typed accessor for `st.data_editor`, so
-app.py stashes the actual Figure objects and the resolved band dict into
-`st.session_state["_test_figures"]` / `["_test_band_defs"]` purely so these
-tests can inspect real objects rather than rendered pixels.
+app.py stashes the actual Figure objects, the resolved band dict, and the
+resolved PSDParams into `st.session_state["_test_figures"]` /
+`["_test_band_defs"]` / `["_test_psd_params"]` purely so these tests can
+inspect real objects rather than rendered pixels or a downloaded file's
+bytes (which `st.download_button` does not expose to AppTest either).
 """
 from __future__ import annotations
 
@@ -456,3 +467,67 @@ def test_nan_explanation_does_not_appear_when_no_band_is_nan():
     assert not at.exception
     info_texts = [i.value for i in at.info]
     assert not any("blank cells" in t for t in info_texts)
+
+
+# --- fix round 2 (a defect introduced by fix round 1's own refactor) ----
+
+def test_raw_periodogram_preset_exports_true_window_not_hardcoded_fallback():
+    """Regression guard for the Fix-round-2 defect. The Window function
+    widget only exists `if method == "welch"`; before this fix, `window`
+    fell back to a hardcoded "hann" literal whenever that widget wasn't
+    instantiated, silently discarding whatever a preset or a loaded
+    settings file actually declared. "Raw periodogram" declares
+    window="boxcar" (PRESETS["Raw periodogram"]["psd"]["window"]) while
+    method="periodogram" never shows that widget -- parameters.json used
+    to report "hann" regardless. compute_psd ignores `window` for every
+    method except "welch" (confirmed by reading psd_methods.py), so this
+    is a metadata-fidelity fix only; no PSD value changes."""
+    at = _fresh_app()
+    _selectbox(at, "Preset").set_value("Raw periodogram")
+    at.run()
+    assert not at.exception
+
+    psd_params = at.session_state["_test_psd_params"]
+    assert psd_params.method == "periodogram"
+    assert psd_params.window == "boxcar"
+
+    # The literal check the reviewer asked for: round-trip through the
+    # actual parameters.json machinery, not just the PSDParams object.
+    parameters = bundle.build_parameters_dict(
+        signal_type="area", normalize="dx_x0_median", detrend_method="linear",
+        highpass_cutoff=0.005, highpass_order=4, trim_seconds=0.0,
+        psd_params=psd_params, max_freq=0.5, xscale="log",
+        bands={"x": (0.01, 0.1)}, fs=FS,
+    )
+    reloaded = bundle.parameters_from_json(bundle.parameters_to_json(parameters))
+    assert reloaded["psd"]["window"] == "boxcar"
+
+
+def test_non_default_nw_k_survive_export_under_method_without_that_widget():
+    """The latent form of the same defect: the NW/K widgets only exist
+    `if method in ("multitaper_welch", "multitaper_thomson")`. A loaded
+    settings file specifying method="welch" with non-default nw=7.0/k=9
+    (moot for welch's own computation, but still real configured metadata
+    -- exactly the shape "Raw periodogram" itself uses for nw/k, just with
+    non-default numbers no built-in preset happens to exercise) must
+    round-trip through parameters.json unchanged rather than silently
+    reporting the hardcoded nw=3.0/k=5 fallback."""
+    at = _fresh_app()
+    params_in = bundle.build_parameters_dict(
+        signal_type="area", normalize="dx_x0_median", detrend_method="linear",
+        highpass_cutoff=0.005, highpass_order=4, trim_seconds=0.0,
+        psd_params=PSDParams(
+            method="welch", nperseg=256, noverlap=128, window="hamming",
+            nw=7.0, k=9, zero_pad=1, scaling="density",
+        ),
+        max_freq=0.5, xscale="log", bands={"x": (0.01, 0.1)}, fs=FS,
+    )
+    payload = bundle.parameters_to_json(params_in).encode("utf-8")
+    _settings_uploader(at).set_value(("nwk_settings.json", payload, "application/json"))
+    at.run()
+    assert not at.exception
+    assert _selectbox(at, "Method").value == "welch"
+
+    psd_params = at.session_state["_test_psd_params"]
+    assert psd_params.nw == 7.0
+    assert psd_params.k == 9

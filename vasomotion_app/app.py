@@ -333,25 +333,51 @@ with st.sidebar:
     with st.expander("Advanced: PSD method"):
         st.session_state.setdefault("method_select", "multitaper_welch")
         method = st.selectbox("Method", options=list(psd_methods.VALID_METHODS), key="method_select")
+
+        # Fix round 2: seed every conditional widget's session_state
+        # unconditionally, before knowing whether the current method will
+        # render it, and read window/nw/k FROM session_state -- never from
+        # a hardcoded literal -- when their widget isn't shown this run.
+        # Before this, `window`/`nw`/`k` fell back to a plain local literal
+        # ("hann"/3.0/5) whenever their widget didn't render for the
+        # current method, silently discarding a preset's or a loaded
+        # settings file's real value for that field (e.g. selecting "Raw
+        # periodogram" -- window="boxcar" -- exported psd.window: "hann"
+        # into parameters.json, since periodogram never shows the Window
+        # function widget). compute_psd ignores `window` for every method
+        # but "welch", and ignores `nw`/`k` for both "welch" and
+        # "periodogram" (confirmed by reading psd_methods.compute_psd), so
+        # this cannot change any computed PSD value -- it only fixes what
+        # parameters.json, the settings export/reload format, reports as
+        # having been configured. `nperseg`/`noverlap` are deliberately NOT
+        # given this treatment: None is their genuinely correct value for
+        # periodogram/multitaper_thomson (neither method has a window
+        # length at all), which is exactly what every preset's own "psd"
+        # dict already encodes for those two methods.
+        st.session_state.setdefault("nperseg_input", 256)
+        st.session_state.setdefault("noverlap_input", 128)
+        st.session_state.setdefault("window_select", "hann")
+        st.session_state.setdefault("nw_input", 3.0)
+        st.session_state.setdefault(
+            "k_input", min(5, max(int(2 * float(st.session_state["nw_input"]) - 1), 1))
+        )
+
         nperseg = None
         noverlap = None
-        window = "hann"
-        nw = 3.0
-        k = 5
         if method in ("welch", "multitaper_welch"):
-            st.session_state.setdefault("nperseg_input", 256)
             nperseg = st.number_input(
                 "Window length (samples)", min_value=2, step=1, key="nperseg_input"
             )
-            st.session_state.setdefault("noverlap_input", 128)
             noverlap = st.number_input("Overlap (samples)", min_value=0, step=1, key="noverlap_input")
+
         if method == "welch":
-            st.session_state.setdefault("window_select", "hann")
             window = st.selectbox(
                 "Window function", options=list(psd_methods.VALID_WINDOWS), key="window_select"
             )
+        else:
+            window = st.session_state["window_select"]
+
         if method in ("multitaper_welch", "multitaper_thomson"):
-            st.session_state.setdefault("nw_input", 3.0)
             # Defect found alongside the three named in the brief: NW's
             # minimum used to be 0.5, but K must satisfy 1 <= K <= 2*NW-1,
             # and that range is empty for any NW below 1.0 -- picking such
@@ -360,12 +386,14 @@ with st.sidebar:
             # the true lower bound, not a defensive guess.
             nw = st.number_input("NW", min_value=1.0, step=0.5, key="nw_input")
             k_max = max(int(2 * nw - 1), 1)
-            st.session_state.setdefault("k_input", min(5, k_max))
             if st.session_state["k_input"] > k_max:
                 st.session_state["k_input"] = k_max
             k = st.number_input(
                 f"K (max {k_max})", min_value=1, max_value=k_max, step=1, key="k_input"
             )
+        else:
+            nw = st.session_state["nw_input"]
+            k = st.session_state["k_input"]
         st.session_state.setdefault("zero_pad_select", 1)
         zero_pad = st.selectbox(
             "Zero-padding", options=[1, 2, 4], key="zero_pad_select",
@@ -413,10 +441,14 @@ with st.sidebar:
         for _, row in band_rows.iterrows()
         if row["band"]
     }
-    # Exposed purely so tests can confirm which bands are actually in effect
-    # (a data_editor's resulting DataFrame has no other introspection path
-    # under streamlit.testing.v1 in this version -- confirmed empirically).
+    # Exposed purely so tests can confirm which bands/PSD settings are
+    # actually in effect (a data_editor's resulting DataFrame has no other
+    # introspection path under streamlit.testing.v1 in this version, and
+    # parameters.json itself is only built much later, inside the
+    # uploaded-file branch, so this is also the only way to check the
+    # window/nw/k fields Fix round 2 addresses without uploading a file).
     st.session_state["_test_band_defs"] = dict(band_defs)
+    st.session_state["_test_psd_params"] = psd_params
 
     with readout_slot:
         if uploaded_file is not None and fs > 0:
