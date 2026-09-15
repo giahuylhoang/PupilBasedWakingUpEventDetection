@@ -10,16 +10,33 @@ from __future__ import annotations
 import pandas as pd
 
 
+def _is_numeric(x) -> bool:
+    """True if `x` is a real (non-bool, non-NaN) int or float.
+
+    This is the shape every animal ID (row 1 header), sample index (column
+    A), and data value in a well-formed sheet must have. Bench spreadsheets
+    routinely tack on a trailing 'Mean' or 'SD' summary row or column;
+    whichever of those three positions it lands in, the label fails this
+    check the same way a stray text cell does -- it is never silently
+    treated as a real sample or a real animal.
+    """
+    return isinstance(x, (int, float)) and not isinstance(x, bool) and not pd.isna(x)
+
+
 class NonNumericDataError(Exception):
-    """Raised when the workbook contains a non-numeric value in a data cell.
+    """Raised when the workbook contains a non-numeric value in a data cell,
+    a non-numeric animal-ID column header, or a non-numeric sample-index
+    label in column A.
 
     A blank/missing cell (read back as NaN) counts as a violation too, the
     same as text or any other non-numeric content -- it is reported rather
-    than silently written into the output as `NaN`.
+    than silently written into the output as `NaN`. A trailing 'Mean' or
+    'SD' summary row or column is reported the same way -- it is never
+    silently treated as a real sample or averaged in as a real animal.
 
     `violations` is a list of dicts, one per bad cell, each with keys
-    'sheet', 'animal_id', 'row', 'value' -- so every offending cell can be
-    reported at once instead of failing on the first one found.
+    'sheet', 'animal_id', 'row', 'value', 'reason' -- so every offending
+    cell can be reported at once instead of failing on the first one found.
     """
 
     def __init__(self, violations: list[dict]) -> None:
@@ -60,6 +77,52 @@ def detect_sheet_structure(sheet_names: list[str]) -> dict:
         "regions": regions,
         "conditions": conditions,
     }
+
+
+def check_animal_pairing(long_df: pd.DataFrame) -> dict:
+    """Check whether every condition within a region was actually measured
+    on the same animals (a repeated-measures / paired design), rather than
+    assuming it from counts alone.
+
+    Counting `nunique()` animals per region says nothing about whether
+    those are the SAME animals across conditions: a region with
+    condition="pre" measured on animals {A, B, C} and condition="TMX" on
+    an entirely different {D, E, F} has 6 unique animals and 0 actually
+    paired, but `groupby("region")["animal"].nunique()` reports 6 either
+    way.
+
+    Returns a dict with keys:
+      'n_paired_per_region': {region: int} -- the number of animals common
+          to every condition present in that region (the intersection
+          across conditions' animal-ID sets), which is the true "paired
+          animal(s)" count a repeated-measures figure or statistic relies
+          on. A region with only one condition is trivially fully paired
+          (that condition's own animal count).
+      'warnings': list[str] -- one entry per region where the conditions
+          do not all share the exact same animal-ID set, naming the region
+          and each condition's animal IDs so the mismatch is inspectable,
+          not just flagged.
+    """
+    warnings: list[str] = []
+    n_paired_per_region: dict = {}
+    for region, region_df in long_df.groupby("region"):
+        condition_animals = {
+            condition: set(cond_df["animal"].unique())
+            for condition, cond_df in region_df.groupby("condition")
+        }
+        animal_sets = list(condition_animals.values())
+        shared = set.intersection(*animal_sets) if animal_sets else set()
+        n_paired_per_region[region] = len(shared)
+        if len(animal_sets) > 1 and any(s != animal_sets[0] for s in animal_sets):
+            detail = "; ".join(
+                f"{condition}={sorted(animals)}" for condition, animals in condition_animals.items()
+            )
+            warnings.append(
+                f"Region {region!r}: conditions do not share the same animal IDs ({detail}). "
+                f"Only {len(shared)} animal(s) are common to every condition in this region -- "
+                "treat paired comparisons here with caution."
+            )
+    return {"n_paired_per_region": n_paired_per_region, "warnings": warnings}
 
 
 def load_workbook_long(
@@ -111,19 +174,39 @@ def load_workbook_long(
         sexes = raw.iloc[1, 1:].tolist()
         samples = raw.iloc[2:, 0].tolist()
         for col_pos, (animal_id, sex) in enumerate(zip(animal_ids, sexes), start=1):
+            # A trailing 'Mean'/'SD' summary COLUMN has a non-numeric header
+            # but perfectly numeric values underneath (they're computed
+            # averages) -- so this has to be checked once per column here,
+            # not folded into the per-cell `value` check below, or it would
+            # sail through as a silent extra "animal".
+            animal_id_ok = _is_numeric(animal_id)
             col_values = raw.iloc[2:, col_pos].tolist()
             for sample, value in zip(samples, col_values):
-                if (
-                    not isinstance(value, (int, float))
-                    or isinstance(value, bool)
-                    or pd.isna(value)
-                ):
+                # Likewise, a trailing 'Mean'/'SD' summary ROW has a
+                # non-numeric label in column A but a numeric value in this
+                # column -- checked independently of `value` so it can never
+                # reach the bare `int(sample)` below and crash.
+                sample_ok = _is_numeric(sample)
+                value_ok = _is_numeric(value)
+                if not (animal_id_ok and sample_ok and value_ok):
+                    reasons = []
+                    if not animal_id_ok:
+                        reasons.append(
+                            f"column header {animal_id!r} is not a plausible animal ID"
+                        )
+                    if not sample_ok:
+                        reasons.append(
+                            f"row label {sample!r} is not a numeric sample index"
+                        )
+                    if not value_ok:
+                        reasons.append("value is missing or non-numeric")
                     violations.append(
                         {
                             "sheet": sheet_name,
                             "animal_id": animal_id,
-                            "row": int(sample) if isinstance(sample, (int, float)) else sample,
+                            "row": int(sample) if sample_ok else sample,
                             "value": value,
+                            "reason": "; ".join(reasons),
                         }
                     )
                     continue

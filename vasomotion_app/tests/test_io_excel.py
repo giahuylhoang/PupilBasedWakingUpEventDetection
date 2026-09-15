@@ -5,10 +5,12 @@ import math
 from pathlib import Path
 
 import openpyxl
+import pandas as pd
 import pytest
 
 from vasomotion_app.io_excel import (
     NonNumericDataError,
+    check_animal_pairing,
     detect_sheet_structure,
     load_workbook_long,
     parse_sheet_name,
@@ -146,6 +148,174 @@ def test_load_workbook_long_blank_cell_raises(tmp_path):
     assert v["animal_id"] == 102
     assert v["row"] == 1
     assert math.isnan(v["value"])
+
+
+# ---------------------------------------------------------------------------
+# ITEM 1: trailing 'Mean'/'SD' summary rows and columns must not corrupt data
+# ---------------------------------------------------------------------------
+
+
+def test_load_workbook_long_trailing_summary_row_is_reported_not_crashed(tmp_path):
+    """The row case. A trailing 'Mean'/'SD' row has a non-numeric label in
+    column A but numeric values underneath (they are computed statistics),
+    so this cannot be caught by the per-value numeric check alone -- before
+    the fix, `int("Mean")` raised an uncaught ValueError that app.py's
+    `except NonNumericDataError` does not catch."""
+    wb = openpyxl.Workbook()
+    wb.remove(wb.active)
+    ws = wb.create_sheet("RegionA condA")
+    ws.append(["Animal ID", 101, 102])
+    ws.append(["Sex", "M", "F"])
+    ws.append([1, 10, 20])
+    ws.append([2, 11, 21])
+    ws.append([3, 12, 22])
+    ws.append(["Mean", 11.0, 21.0])
+    ws.append(["SD", 1.0, 1.0])
+    path = tmp_path / "trailing_row.xlsx"
+    wb.save(path)
+
+    with pytest.raises(NonNumericDataError) as excinfo:
+        load_workbook_long(str(path))
+    # Every column of both summary rows is reported (2 animals x 2 rows) --
+    # never crashes, and never silently folded in as real sample data.
+    assert len(excinfo.value.violations) == 4
+    assert {v["row"] for v in excinfo.value.violations} == {"Mean", "SD"}
+    assert all("row label" in v["reason"] for v in excinfo.value.violations)
+
+
+def test_load_workbook_long_trailing_summary_column_excluded_not_averaged_in(tmp_path):
+    """The column case (the serious one). A trailing 'Mean'/'SD' column has
+    a non-numeric header but numeric values underneath (computed
+    statistics), so it must never be counted as a real animal or folded
+    into a group average -- before the fix this passed silently and
+    'Mean'/'SD' showed up as extra 'animals'."""
+    wb = openpyxl.Workbook()
+    wb.remove(wb.active)
+    ws = wb.create_sheet("RegionA condA")
+    ws.append(["Animal ID", 101, 102, "Mean", "SD"])
+    ws.append(["Sex", "M", "F", None, None])
+    ws.append([1, 10, 20, 15.0, 5.0])
+    ws.append([2, 11, 21, 16.0, 5.0])
+    ws.append([3, 12, 22, 17.0, 5.0])
+    path = tmp_path / "trailing_col.xlsx"
+    wb.save(path)
+
+    with pytest.raises(NonNumericDataError) as excinfo:
+        load_workbook_long(str(path))
+    # Every sample row of both summary columns is reported (2 columns x 3
+    # samples). Critically, 'Mean'/'SD' never reach a returned dataframe as
+    # an "animal" -- the load raises instead of returning contaminated data.
+    assert len(excinfo.value.violations) == 6
+    assert {v["animal_id"] for v in excinfo.value.violations} == {"Mean", "SD"}
+    assert all("plausible animal ID" in v["reason"] for v in excinfo.value.violations)
+
+
+def test_load_workbook_long_large_integer_animal_id_is_accepted(tmp_path):
+    """Regression guard for the plausibility check above: real animal IDs
+    are 6-digit integers like 371146 (per the real workbook), not small
+    sequential numbers -- the fix must not start rejecting those."""
+    wb = openpyxl.Workbook()
+    wb.remove(wb.active)
+    _write_sheet(
+        wb, "RegionA condA",
+        animal_ids=[371146, 410328],
+        sexes=["M", "F"],
+        values=[[10, 20], [11, 21], [12, 22]],
+    )
+    path = tmp_path / "real_ids.xlsx"
+    wb.save(path)
+    df = load_workbook_long(str(path))
+    assert set(df["animal"].unique()) == {371146, 410328}
+
+
+# ---------------------------------------------------------------------------
+# check_animal_pairing
+# ---------------------------------------------------------------------------
+
+
+def _long_df(rows):
+    """rows: list of (animal, region, condition) -- 'sex'/'sample'/'value'
+    are irrelevant to pairing and filled with placeholders."""
+    return pd.DataFrame(
+        [
+            {"animal": a, "sex": "M", "region": r, "condition": c, "sample": 1, "value": 0.0}
+            for a, r, c in rows
+        ]
+    )
+
+
+def test_check_animal_pairing_genuinely_unpaired_fixture():
+    """IMPORTANT fix-wave item 4. The exact scenario from the review:
+    pre={A,B,C}, TMX={D,E,F} for the same region -- 6 distinct animals by
+    count, 0 actually measured under both conditions. Before this fix,
+    `groupby("region")["animal"].nunique()` reported 6 "paired" here,
+    which is the one number this check exists to catch as wrong."""
+    df = _long_df(
+        [(a, "R1", "pre") for a in ["A", "B", "C"]]
+        + [(a, "R1", "TMX") for a in ["D", "E", "F"]]
+    )
+    result = check_animal_pairing(df)
+    assert result["n_paired_per_region"] == {"R1": 0}
+    assert len(result["warnings"]) == 1
+    assert "R1" in result["warnings"][0]
+    assert "do not share the same animal IDs" in result["warnings"][0]
+
+
+def test_check_animal_pairing_fully_paired_no_warning():
+    df = _long_df(
+        [(a, "R1", "pre") for a in ["A", "B", "C"]]
+        + [(a, "R1", "TMX") for a in ["A", "B", "C"]]
+    )
+    result = check_animal_pairing(df)
+    assert result["n_paired_per_region"] == {"R1": 3}
+    assert result["warnings"] == []
+
+
+def test_check_animal_pairing_partial_overlap_counts_only_the_intersection():
+    # pre={A,B,C}, TMX={B,C,D}: 2 animals (B, C) genuinely common to both,
+    # not the 4 unique animals nunique() would count, and not 0 either --
+    # a distinct case from "fully paired" and "fully unpaired".
+    df = _long_df(
+        [(a, "R1", "pre") for a in ["A", "B", "C"]]
+        + [(a, "R1", "TMX") for a in ["B", "C", "D"]]
+    )
+    result = check_animal_pairing(df)
+    assert result["n_paired_per_region"] == {"R1": 2}
+    assert len(result["warnings"]) == 1
+
+
+def test_check_animal_pairing_single_condition_region_is_trivially_paired():
+    # A region with only one condition has nothing to compare against --
+    # every animal present counts as paired, and no warning is meaningful.
+    df = _long_df([(a, "R1", "pre") for a in ["A", "B", "C"]])
+    result = check_animal_pairing(df)
+    assert result["n_paired_per_region"] == {"R1": 3}
+    assert result["warnings"] == []
+
+
+def test_check_animal_pairing_reports_per_region_independently():
+    # R1 is unpaired, R2 is fully paired -- one region's mismatch must not
+    # taint or hide the other's correct count.
+    df = _long_df(
+        [(a, "R1", "pre") for a in ["A", "B"]]
+        + [(a, "R1", "TMX") for a in ["C", "D"]]
+        + [(a, "R2", "pre") for a in ["X", "Y"]]
+        + [(a, "R2", "TMX") for a in ["X", "Y"]]
+    )
+    result = check_animal_pairing(df)
+    assert result["n_paired_per_region"] == {"R1": 0, "R2": 2}
+    assert len(result["warnings"]) == 1
+    assert "R1" in result["warnings"][0]
+    assert "R2" not in result["warnings"][0]
+
+
+def test_check_animal_pairing_from_real_workbook_via_load_workbook_long(simple_workbook):
+    # End-to-end sanity check through the real loader, not just a hand-built
+    # DataFrame: simple_workbook's two sheets share animal_ids=[101, 102].
+    df = load_workbook_long(simple_workbook)
+    result = check_animal_pairing(df)
+    assert result["n_paired_per_region"] == {"RegionA": 2}
+    assert result["warnings"] == []
 
 
 @pytest.mark.skipif(
