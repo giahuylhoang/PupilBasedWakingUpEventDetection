@@ -229,6 +229,72 @@ def test_load_workbook_long_large_integer_animal_id_is_accepted(tmp_path):
 
 
 # ---------------------------------------------------------------------------
+# ITEM 2: NonNumericDataError's message must be capped, however many
+# violations there are (fixed entirely inside the exception class, since
+# app.py -- which renders str(exc) verbatim -- belongs to another agent).
+# ---------------------------------------------------------------------------
+
+
+def _many_violations(n):
+    return [
+        {"sheet": "S", "animal_id": float("nan"), "row": i, "value": float("nan")}
+        for i in range(n)
+    ]
+
+
+def test_non_numeric_data_error_message_is_capped_with_many_violations():
+    # Real reported bug: one blank animal column across two sheets produced
+    # a 119,816-character error box. Reproduce the shape (many violations)
+    # directly against the exception class, which is where the fix lives.
+    violations = _many_violations(5000)
+    exc = NonNumericDataError(violations)
+    message = str(exc)
+    assert len(message) < 5000
+    assert "5000" in message  # the true total is still stated
+    assert "more" in message.lower()  # says how many were omitted
+    # Nothing is lost programmatically even though the message is capped.
+    assert len(exc.violations) == 5000
+
+
+def test_non_numeric_data_error_message_not_flagged_omitted_when_few_violations():
+    violations = _many_violations(2)
+    exc = NonNumericDataError(violations)
+    message = str(exc)
+    assert "more" not in message.lower()
+    assert len(exc.violations) == 2
+
+
+def test_load_workbook_long_many_violations_message_is_capped_end_to_end(tmp_path):
+    """The exact real-world shape: a blank animal-ID column turns every
+    sample row in that column into its own violation. Recreated through the
+    real loader (not just the exception class in isolation) to prove the
+    cap holds on the actual path app.py's `st.error(str(exc))` renders.
+
+    The column carries real numeric values below the blank header (an
+    all-blank column would be trimmed away entirely by openpyxl/pandas
+    before `load_workbook_long` ever sees it) -- exactly the "computed
+    statistic under a bad header" shape from the ITEM 1 column case, just
+    scaled up to many rows instead of a handful."""
+    n_samples = 500
+    wb = openpyxl.Workbook()
+    wb.remove(wb.active)
+    ws = wb.create_sheet("RegionA condA")
+    ws.append(["Animal ID", 101, ""])  # second animal column has a blank header
+    ws.append(["Sex", "M", ""])
+    for i in range(1, n_samples + 1):
+        ws.append([i, 10 + i, 20 + i])
+    path = tmp_path / "many_violations.xlsx"
+    wb.save(path)
+
+    with pytest.raises(NonNumericDataError) as excinfo:
+        load_workbook_long(str(path))
+    assert len(excinfo.value.violations) == n_samples
+    message = str(excinfo.value)
+    assert len(message) < 5000
+    assert "more" in message.lower()
+
+
+# ---------------------------------------------------------------------------
 # check_animal_pairing
 # ---------------------------------------------------------------------------
 

@@ -10,6 +10,17 @@ from __future__ import annotations
 import pandas as pd
 
 
+def _format_violation(v: dict) -> str:
+    text = (
+        f"sheet={v['sheet']!r} animal_id={v['animal_id']!r} "
+        f"row={v['row']!r} value={v['value']!r}"
+    )
+    reason = v.get("reason")
+    if reason:
+        text += f" [{reason}]"
+    return text
+
+
 def _is_numeric(x) -> bool:
     """True if `x` is a real (non-bool, non-NaN) int or float.
 
@@ -37,16 +48,37 @@ class NonNumericDataError(Exception):
     `violations` is a list of dicts, one per bad cell, each with keys
     'sheet', 'animal_id', 'row', 'value', 'reason' -- so every offending
     cell can be reported at once instead of failing on the first one found.
+    `.violations` always holds the complete, untruncated list, even though
+    `str(exc)` caps how many it lists (see MAX_VIOLATIONS_SHOWN and
+    MAX_DETAIL_CHARS below) -- a workbook with many bad cells (e.g. one
+    blank animal column across several sheets) must not blow up into an
+    arbitrarily long, unreadable error message. Callers that want the full
+    detail can always iterate `.violations` themselves.
     """
 
+    # Hard caps so str(exc) is always bounded, regardless of how many
+    # violations were found or how large any single cell's repr is.
+    MAX_VIOLATIONS_SHOWN = 20
+    MAX_DETAIL_CHARS = 4000
+
     def __init__(self, violations: list[dict]) -> None:
-        self.violations = violations
-        detail = "; ".join(
-            f"sheet={v['sheet']!r} animal_id={v['animal_id']!r} "
-            f"row={v['row']} value={v['value']!r}"
-            for v in violations
-        )
-        super().__init__(f"Non-numeric data found in {len(violations)} cell(s): {detail}")
+        self.violations = list(violations)
+        super().__init__(self.violations)
+
+    def __str__(self) -> str:
+        total = len(self.violations)
+        shown = self.violations[: self.MAX_VIOLATIONS_SHOWN]
+        detail = "; ".join(_format_violation(v) for v in shown)
+        if len(detail) > self.MAX_DETAIL_CHARS:
+            detail = detail[: self.MAX_DETAIL_CHARS].rstrip() + " ...[truncated]"
+        message = f"Non-numeric data found in {total} cell(s): {detail}"
+        omitted = total - len(shown)
+        if omitted > 0:
+            message += (
+                f"; ({omitted} more violation(s) not shown -- "
+                "see .violations for the complete list)"
+            )
+        return message
 
 
 def parse_sheet_name(sheet_name: str) -> tuple[str, str] | None:
