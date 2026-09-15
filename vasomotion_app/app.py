@@ -315,13 +315,46 @@ with st.sidebar:
         highpass_on = st.checkbox("High-pass filter", key="highpass_on_checkbox")
         if highpass_on:
             st.session_state.setdefault("highpass_cutoff_input", 0.005)
+            # Item 2 (fix wave): preprocess.highpass_filter silently passes
+            # the trace through unchanged for any cutoff at or above the
+            # Nyquist frequency (fs/2) -- by design, so it never raises or
+            # warns on its own. Left unguarded here, a user could tick this
+            # box, enter e.g. 1.5 Hz at fs=2 Hz, and get an untouched trace
+            # while the checkbox stays ticked, the field still shows 1.5,
+            # and parameters.json records highpass_cutoff: 1.5 as though it
+            # had been applied -- the same "control that silently does
+            # nothing" defect this branch has already fixed twice for other
+            # controls. Two independent layers, neither alone sufficient:
+            # `nyquist` bounds the widget itself (None -- no bound -- while
+            # fs is still unset, so this is never clamped to a meaningless
+            # max_value before fs is known; confirmed empirically against
+            # streamlit 1.63.0 that a stale value above a newly-lowered
+            # max_value degrades to min_value on its own, unlike the empty
+            # min>max range that crashed the NW/K widget, so no manual
+            # pre-clamp is needed here).
+            nyquist = fs / 2 if fs > 0 else None
             highpass_cutoff = st.number_input(
-                "High-pass cutoff (Hz)", format="%.4f", key="highpass_cutoff_input"
+                "High-pass cutoff (Hz)", format="%.4f",
+                min_value=0.0, max_value=nyquist, key="highpass_cutoff_input",
             )
             st.session_state.setdefault("highpass_order_input", 4)
             highpass_order = st.number_input(
                 "High-pass order", min_value=1, step=1, key="highpass_order_input"
             )
+            # The widget bound above still leaves its own exact boundary
+            # (cutoff == nyquist) selectable, which is just as inert as
+            # exceeding it (highpass_filter's own condition is `>=`) -- so
+            # the effective value is validated again here, against that
+            # same condition, regardless of what the widget allowed. An
+            # inert filter is never passed on as though it were applied:
+            # highpass_cutoff becomes None -- not merely flagged with a
+            # warning while the stale, ineffective number keeps flowing
+            # into run_pipeline and parameters.json.
+            if fs > 0:
+                cutoff_warning = preprocess.validate_highpass_cutoff(highpass_cutoff, fs)
+                if cutoff_warning:
+                    st.warning(cutoff_warning)
+                    highpass_cutoff = None
         else:
             highpass_cutoff = None
             highpass_order = 4
@@ -449,6 +482,13 @@ with st.sidebar:
     # window/nw/k fields Fix round 2 addresses without uploading a file).
     st.session_state["_test_band_defs"] = dict(band_defs)
     st.session_state["_test_psd_params"] = psd_params
+    # Item 2 (fix wave): same rationale -- st.download_button exposes no
+    # more to AppTest than whether it was clicked, so this is the only way
+    # a test can confirm the actual value that will flow into run_pipeline
+    # and parameters.json is None whenever the widget's raw number would
+    # be an inert (<=0 or >= Nyquist) high-pass cutoff, not merely that a
+    # warning was shown alongside an unchanged, still-ineffective number.
+    st.session_state["_test_highpass_cutoff"] = highpass_cutoff
 
     with readout_slot:
         if uploaded_file is not None and fs > 0:

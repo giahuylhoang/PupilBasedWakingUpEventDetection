@@ -89,6 +89,33 @@ def highpass_filter(
     return sosfiltfilt(sos, x)
 
 
+def validate_highpass_cutoff(cutoff_hz: float | None, fs: float) -> str | None:
+    """Return a human-readable warning if `cutoff_hz` would make
+    `highpass_filter` above a silent no-op (None, <= 0, or at/above the
+    Nyquist frequency fs/2), else None.
+
+    Mirrors `highpass_filter`'s own no-op condition exactly -- the same
+    `cutoff_hz <= 0 or cutoff_hz >= fs / 2` test, not a separately
+    maintained copy of it -- so a caller can warn about, and refuse to
+    record as "applied", a cutoff that would not actually filter
+    anything, rather than relying on highpass_filter's own silent
+    pass-through to ever surface the mistake. At fs=2 Hz, a cutoff of 1.5
+    Hz is exactly this case: >= the 1.0 Hz Nyquist frequency, so
+    highpass_filter passes the trace through unchanged, but nothing about
+    that call raises or warns on its own.
+    """
+    if cutoff_hz is None:
+        return None
+    nyquist = fs / 2
+    if cutoff_hz <= 0 or cutoff_hz >= nyquist:
+        return (
+            f"High-pass cutoff {cutoff_hz} Hz has no effect at fs={fs} Hz: it must be "
+            f"> 0 and < the Nyquist frequency (fs/2 = {nyquist:.4f} Hz). The filter will "
+            "not be applied, and this run's settings will not record a cutoff."
+        )
+    return None
+
+
 def preprocess_signal(
     values: np.ndarray,
     fs: float,

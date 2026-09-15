@@ -804,3 +804,57 @@ def test_signal_type_passed_to_run_pipeline_matches_the_radio(monkeypatch):
         assert "Group-average spectra" in [h.value for h in at.header]
 
     assert calls == ["area", "diameter"]
+
+
+# --- fix-wave item 2: high-pass cutoff bounded against Nyquist ----------
+
+@requires_sample_file
+def test_highpass_cutoff_at_nyquist_is_not_applied_or_recorded():
+    """Item 2 (fix wave). preprocess.highpass_filter silently passes a
+    trace through unchanged for any cutoff at or above the Nyquist
+    frequency (fs/2) -- exact repro from the brief: at fs=2 Hz (Nyquist=
+    1.0 Hz), a too-high cutoff used to leave the checkbox ticked, the
+    field showing that number, and parameters.json recording it as though
+    applied, while nothing was actually filtered. 1.0 Hz -- the Nyquist
+    frequency itself, not something further above it like 1.5 -- is used
+    here because the widget's own max_value=nyquist bound (this fix's
+    first layer) makes Streamlit silently fall back to min_value for
+    anything entered above 1.0 (confirmed empirically against streamlit
+    1.63.0's number_input: an out-of-range stale value degrades to
+    min_value, not a clamp to max_value or a crash), so app.py's own code
+    would never even see a raw 1.5 to warn about. 1.0 is exactly the
+    boundary the *second* layer (validate_highpass_cutoff's `>=` check,
+    mirroring highpass_filter's own no-op condition) exists to catch,
+    since bounding the widget cannot exclude its own boundary value.
+    Confirms a clear warning names the Nyquist frequency and that the
+    value which would actually reach run_pipeline and parameters.json
+    (_test_highpass_cutoff -- st.download_button exposes no more to
+    AppTest than whether it was clicked) is None, not 1.0: an inert
+    filter must never be recorded as applied."""
+    at = _upload_sample_and_configure(_fresh_app())
+    _number_input(at, "High-pass cutoff (Hz)").set_value(1.0)
+    at.run()
+    assert not at.exception
+
+    # The widget itself accepted 1.0 (proof max_value really is fs/2 = 1.0,
+    # not something stricter that would have rejected it before app.py's
+    # own validation ever ran).
+    assert _number_input(at, "High-pass cutoff (Hz)").value == 1.0
+    assert _checkbox(at, "High-pass filter").value is True
+
+    warnings = [w.value for w in at.warning]
+    assert any("Nyquist" in w and "1.0" in w for w in warnings)
+    assert at.session_state["_test_highpass_cutoff"] is None
+
+
+@requires_sample_file
+def test_highpass_cutoff_well_below_nyquist_is_applied_and_recorded():
+    """Negative companion: the shipped default cutoff (0.005 Hz) at
+    fs=2 Hz is nowhere near the 1.0 Hz Nyquist frequency, so item 2's fix
+    must not cry wolf on the common, correct case -- no warning, and the
+    real value (not None) reaches _test_highpass_cutoff."""
+    at = _upload_sample_and_configure(_fresh_app())
+    assert not at.exception
+    assert at.session_state["_test_highpass_cutoff"] == 0.005
+    warnings = [w.value for w in at.warning]
+    assert not any("Nyquist" in w for w in warnings)
