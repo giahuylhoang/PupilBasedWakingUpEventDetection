@@ -181,8 +181,12 @@ def check_animal_pairing(long_df: pd.DataFrame) -> dict:
         shared = set.intersection(*animal_sets) if animal_sets else set()
         n_paired_per_region[region] = len(shared)
         if len(animal_sets) > 1 and any(s != animal_sets[0] for s in animal_sets):
+            # str() each ID before joining: pandas hands back numpy scalars,
+            # whose repr inside a list renders as "[np.int64(3), np.int64(4)]"
+            # in the warning a bench scientist actually reads on screen.
             detail = "; ".join(
-                f"{condition}={sorted(animals)}" for condition, animals in condition_animals.items()
+                f"{condition}=" + ", ".join(str(a) for a in sorted(animals, key=str))
+                for condition, animals in sorted(condition_animals.items())
             )
             warnings.append(
                 f"Region {region!r}: conditions do not share the same animal IDs ({detail}). "
