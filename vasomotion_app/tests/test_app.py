@@ -707,3 +707,100 @@ def test_paired_animal_ids_across_conditions_shows_no_warning(tmp_path):
     assert any("3 paired animal(s) per region" in c for c in captions)
     warnings = [w.value for w in at.warning]
     assert not any("do not share the same animal IDs" in w for w in warnings)
+
+
+# --- fix-wave item 3: signal_type/fs no-default + run_pipeline wiring ---
+
+@requires_sample_file
+def test_pipeline_does_not_run_until_signal_type_is_chosen():
+    """Mutation guard: `signal_type = signal_type_label.lower() if
+    signal_type_label else None` (app.py) must never fall back to a
+    truthy default such as "area" -- that would run the pipeline (with
+    area's square root silently applied) before the user has ever chosen
+    Area vs Diameter. test_app_signal_type_radio_has_no_default only
+    checks the RADIO WIDGET's own displayed value, which a mutation to
+    the `else` branch (e.g. `else "area"`) leaves completely untouched --
+    this drives the one path that mutation would actually break: file
+    uploaded, fs set, radio deliberately left untouched."""
+    at = _fresh_app()
+    with open(SAMPLE_PATH, "rb") as f:
+        content = f.read()
+    _excel_uploader(at).set_value((
+        "Vasomotion analysis compilation_Bal K.xlsx", content,
+        "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+    ))
+    _number_input(at, "Sampling rate (Hz)").set_value(FS)
+    at.run()
+    assert not at.exception
+    assert _radio(at, ["Area", "Diameter"]).value is None
+    info_texts = [i.value for i in at.info]
+    assert any("Choose whether the signal is Area or Diameter" in t for t in info_texts)
+    assert "Group-average spectra" not in [h.value for h in at.header]
+
+
+@requires_sample_file
+def test_pipeline_does_not_run_until_sampling_rate_is_entered():
+    """Mutation guard: `st.session_state.setdefault("fs_input", 0.0)`
+    must never seed a plausible-looking default such as 2.0 -- fs is one
+    of the spec's two flagship no-default inputs, and 2.0 happens to be
+    this very sample file's own fixed fs (FS above), so a "2.0 default"
+    mutation would be invisible to every other test in this file (all of
+    which explicitly set fs=2.0 anyway before doing anything else). This
+    drives the one path that would expose it: file uploaded, signal type
+    chosen, fs deliberately never touched."""
+    at = _fresh_app()
+    with open(SAMPLE_PATH, "rb") as f:
+        content = f.read()
+    _excel_uploader(at).set_value((
+        "Vasomotion analysis compilation_Bal K.xlsx", content,
+        "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+    ))
+    _radio(at, ["Area", "Diameter"]).set_value("Area")
+    at.run()
+    assert not at.exception
+    assert _number_input(at, "Sampling rate (Hz)").value == 0.0
+    info_texts = [i.value for i in at.info]
+    assert any("Enter a sampling rate to begin" in t for t in info_texts)
+    assert "Group-average spectra" not in [h.value for h in at.header]
+
+
+@requires_sample_file
+def test_signal_type_passed_to_run_pipeline_matches_the_radio(monkeypatch):
+    """Item 3's central guard, and the most important of the three: the
+    value app.py hands `bundle.run_pipeline` as `signal_type` must be
+    exactly what the Signal-is radio says, never a hardcoded literal
+    (e.g. `signal_type="area"` regardless of the widget) -- the exact
+    mutation the reviewer probed for. That mutation is invisible to every
+    other assertion in this suite: the radio widget still shows whatever
+    the user picked, parameters.json's "signal_type" field still reads
+    from the same (unmutated) local variable everything else here checks,
+    and run_pipeline accepts "area" just as happily as "diameter" and
+    still returns full results -- so a test that only checks "did it
+    crash" or "what does the widget/JSON say" cannot catch it. This wraps
+    the real run_pipeline (not a stub -- results must still be genuine)
+    to record exactly what app.py called it with, run once per radio
+    option so a hardcoded default in either direction is caught."""
+    calls = []
+    real_run_pipeline = bundle.run_pipeline
+
+    def spy(*args, **kwargs):
+        calls.append(kwargs.get("signal_type"))
+        return real_run_pipeline(*args, **kwargs)
+
+    monkeypatch.setattr(bundle, "run_pipeline", spy)
+
+    with open(SAMPLE_PATH, "rb") as f:
+        content = f.read()
+    for label in ("Area", "Diameter"):
+        at = _fresh_app()
+        _excel_uploader(at).set_value((
+            "Vasomotion analysis compilation_Bal K.xlsx", content,
+            "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        ))
+        _number_input(at, "Sampling rate (Hz)").set_value(FS)
+        _radio(at, ["Area", "Diameter"]).set_value(label)
+        at.run()
+        assert not at.exception
+        assert "Group-average spectra" in [h.value for h in at.header]
+
+    assert calls == ["area", "diameter"]
