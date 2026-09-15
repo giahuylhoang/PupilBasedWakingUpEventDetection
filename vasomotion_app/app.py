@@ -521,11 +521,24 @@ else:
 
     n_regions = len(set(structure["regions"]) | {r for r, _ in sheet_regions_override.values()})
     n_conditions = len(set(structure["conditions"]) | {c for _, c in sheet_regions_override.values()})
-    n_animals = long_df.groupby("region")["animal"].nunique().min()
+    # Item 1 (fix wave): a naive `groupby("region")["animal"].nunique()` counts
+    # DISTINCT animals per region, which says nothing about whether those are
+    # the SAME animals across that region's conditions -- a region with
+    # condition="pre" on {A,B,C} and condition="TMX" on an entirely different
+    # {D,E,F} has 6 unique animals and 0 actually paired, but nunique()
+    # reported 6 either way. io_excel.check_animal_pairing computes the true
+    # per-region intersection instead; the smallest such intersection across
+    # regions is shown here (same single-number caption format as before),
+    # and every region whose conditions disagree gets its own plain warning
+    # naming the mismatch.
+    pairing = io_excel.check_animal_pairing(long_df)
+    n_animals = min(pairing["n_paired_per_region"].values()) if pairing["n_paired_per_region"] else 0
     st.caption(
         f"Detected {n_regions} region(s) x {n_conditions} condition(s), "
         f"{n_animals} paired animal(s) per region."
     )
+    for pairing_warning in pairing["warnings"]:
+        st.warning(pairing_warning)
 
     try:
         bands_module.validate_band_names(band_defs)

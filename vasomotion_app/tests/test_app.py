@@ -56,6 +56,7 @@ from __future__ import annotations
 
 import os
 
+import openpyxl
 import pytest
 from streamlit.testing.v1 import AppTest
 
@@ -615,3 +616,94 @@ def test_compare_methods_with_raw_periodogram_preset_does_not_crash():
         "Download band summary (CSV)", "Download full PSD (CSV)",
         "Download parameters.json", "Download everything (.zip)",
     } <= download_labels
+
+
+def _write_workbook(path, sheets):
+    """sheets: {sheet_name: (animal_ids, sexes, values)}, same shape as
+    test_io_excel.py's _write_sheet helper (kept local since importing
+    across test modules is not this suite's convention)."""
+    wb = openpyxl.Workbook()
+    wb.remove(wb.active)
+    for name, (animal_ids, sexes, values) in sheets.items():
+        ws = wb.create_sheet(name)
+        ws.append(["Animal ID", *animal_ids])
+        ws.append(["Sex", *sexes])
+        for i, row in enumerate(values, start=1):
+            ws.append([i, *row])
+    wb.save(path)
+
+
+def test_unpaired_animal_ids_across_conditions_shows_true_count_and_warning(tmp_path):
+    """IMPORTANT fix-wave item 4. Exact review repro: region "R1"'s two
+    conditions use entirely disjoint animal IDs (pre={101,102,103},
+    TMX={104,105,106} -- numeric, since io_excel.load_workbook_long now
+    rejects a non-numeric animal-ID column header as "not a plausible
+    animal ID"; letters stood in for these before that check existed).
+    `long_df.groupby("region")["animal"].nunique()` -- the old computation
+    -- counts 6 distinct animals and reports "6 paired animal(s) per
+    region", which is wrong: none of them were measured under both
+    conditions. This confirms the caption now shows the true count (0) and
+    a plain warning names the mismatch, using a real uploaded workbook
+    (not a call directly into io_excel), so the fix is confirmed wired
+    into the UI, not just the underlying function."""
+    values = [[10.0 + i, 11.0 + i, 12.0 + i] for i in range(20)]
+    path = tmp_path / "unpaired.xlsx"
+    _write_workbook(
+        path,
+        {
+            "R1 pre": ([101, 102, 103], ["M", "M", "F"], values),
+            "R1 TMX": ([104, 105, 106], ["M", "M", "F"], values),
+        },
+    )
+    at = _fresh_app()
+    with open(path, "rb") as f:
+        content = f.read()
+    _excel_uploader(at).set_value((
+        "unpaired.xlsx", content,
+        "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+    ))
+    _number_input(at, "Sampling rate (Hz)").set_value(2.0)
+    _radio(at, ["Area", "Diameter"]).set_value("Area")
+    at.run()
+    assert not at.exception
+
+    captions = [c.value for c in at.caption]
+    assert any("0 paired animal(s) per region" in c for c in captions)
+    warnings = [w.value for w in at.warning]
+    assert any(
+        "R1" in w and "do not share the same animal IDs" in w for w in warnings
+    )
+
+
+def test_paired_animal_ids_across_conditions_shows_no_warning(tmp_path):
+    """Companion negative case: the same shape, but both conditions
+    genuinely share their animal IDs -- must report the true count (3)
+    and raise no pairing warning, so the fix does not cry wolf on the
+    common, correct case. Numeric IDs for the same reason as the sibling
+    test above (io_excel.load_workbook_long requires a plausible, numeric
+    animal-ID column header)."""
+    values = [[10.0 + i, 11.0 + i, 12.0 + i] for i in range(20)]
+    path = tmp_path / "paired.xlsx"
+    _write_workbook(
+        path,
+        {
+            "R1 pre": ([101, 102, 103], ["M", "M", "F"], values),
+            "R1 TMX": ([101, 102, 103], ["M", "M", "F"], values),
+        },
+    )
+    at = _fresh_app()
+    with open(path, "rb") as f:
+        content = f.read()
+    _excel_uploader(at).set_value((
+        "paired.xlsx", content,
+        "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+    ))
+    _number_input(at, "Sampling rate (Hz)").set_value(2.0)
+    _radio(at, ["Area", "Diameter"]).set_value("Area")
+    at.run()
+    assert not at.exception
+
+    captions = [c.value for c in at.caption]
+    assert any("3 paired animal(s) per region" in c for c in captions)
+    warnings = [w.value for w in at.warning]
+    assert not any("do not share the same animal IDs" in w for w in warnings)
