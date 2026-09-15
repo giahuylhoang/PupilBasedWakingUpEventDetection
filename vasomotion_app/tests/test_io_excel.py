@@ -207,7 +207,7 @@ def test_load_workbook_long_trailing_summary_column_excluded_not_averaged_in(tmp
     # an "animal" -- the load raises instead of returning contaminated data.
     assert len(excinfo.value.violations) == 6
     assert {v["animal_id"] for v in excinfo.value.violations} == {"Mean", "SD"}
-    assert all("plausible animal ID" in v["reason"] for v in excinfo.value.violations)
+    assert all("summary" in v["reason"] for v in excinfo.value.violations)
 
 
 def test_load_workbook_long_large_integer_animal_id_is_accepted(tmp_path):
@@ -399,3 +399,49 @@ def test_real_sample_file_sheet_names_and_shape():
     df = load_workbook_long(str(REAL_WORKBOOK))
     assert list(df.columns) == ["animal", "sex", "region", "condition", "sample", "value"]
     assert df.shape == (28152, 6)
+
+
+def test_load_workbook_long_accepts_non_numeric_animal_ids(tmp_path):
+    """A lab that names animals 'M1' / 'Mouse_7' must not have its whole
+    workbook rejected.
+
+    Guards a real over-restriction: the trailing-summary-column fix first
+    required every animal-ID header to be NUMERIC, which happened to pass
+    on our sample file (6-digit integer IDs) while rejecting any lab using
+    alphanumeric IDs. The rule is 'not a summary label', not 'is a number'.
+    """
+    from openpyxl import Workbook
+
+    wb = Workbook()
+    ws = wb.active
+    ws.title = "SpVB pre"
+    ws.append(["Animal ID", "M1", "Mouse_7", 371146])
+    ws.append(["Sex", "M", "F", "M"])
+    ws.append([1, 10.0, 20.0, 30.0])
+    ws.append([2, 11.0, 21.0, 31.0])
+    path = tmp_path / "alnum_ids.xlsx"
+    wb.save(path)
+
+    df = load_workbook_long(str(path))
+
+    assert {str(a) for a in df["animal"].unique()} == {"M1", "Mouse_7", "371146"}
+    assert len(df) == 6  # 3 animals x 2 samples, none dropped
+
+
+def test_load_workbook_long_rejects_summary_label_variants(tmp_path):
+    """'Mean', 'SD', 'Average', 'StDev', 'SEM' and messy spacing are all
+    caught, not just the exact string 'Mean'."""
+    from openpyxl import Workbook
+
+    for label in ("Mean", "SD", "Average", "StDev", "SEM", " mean ", "N"):
+        wb = Workbook()
+        ws = wb.active
+        ws.title = "SpVB pre"
+        ws.append(["Animal ID", 101, label])
+        ws.append(["Sex", "M", ""])
+        ws.append([1, 10.0, 10.0])
+        path = tmp_path / f"summary_{label.strip() or 'blank'}.xlsx"
+        wb.save(path)
+
+        with pytest.raises(NonNumericDataError):
+            load_workbook_long(str(path))

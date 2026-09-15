@@ -34,6 +34,41 @@ def _is_numeric(x) -> bool:
     return isinstance(x, (int, float)) and not isinstance(x, bool) and not pd.isna(x)
 
 
+# Labels a spreadsheet uses for a trailing summary row or column. Matched
+# case-insensitively after stripping, so 'Mean', ' mean ', 'SD', 'StDev' and
+# 'Average' are all caught.
+_SUMMARY_LABELS = frozenset({
+    "mean", "average", "avg", "median", "mode",
+    "sd", "std", "stdev", "stddev", "s.d.", "sem", "se", "stderr",
+    "var", "variance", "cv",
+    "n", "count", "total", "sum", "min", "max", "range",
+})
+
+
+def _is_plausible_animal_id(x) -> bool:
+    """True if `x` could be a real animal identifier in row 1.
+
+    Deliberately permissive about FORM: labs identify animals as bare
+    integers (371146 in our sample file), as strings ('M1', 'Mouse_7'),
+    or as anything else they like, and rejecting a whole workbook over
+    house style would be worse than the bug this guards against.
+
+    What it rejects is a header that is blank, or that names a summary
+    statistic -- that is the actual failure mode, a trailing 'Mean' or
+    'SD' column whose values are perfectly numeric computed averages and
+    which therefore sails through every value-level check to become a
+    silent extra "animal" in the group spectrum.
+    """
+    if x is None or (isinstance(x, float) and pd.isna(x)):
+        return False
+    if _is_numeric(x):
+        return True
+    text = str(x).strip()
+    if not text:
+        return False
+    return text.lower().rstrip(".") not in _SUMMARY_LABELS
+
+
 class NonNumericDataError(Exception):
     """Raised when the workbook contains a non-numeric value in a data cell,
     a non-numeric animal-ID column header, or a non-numeric sample-index
@@ -211,7 +246,7 @@ def load_workbook_long(
             # averages) -- so this has to be checked once per column here,
             # not folded into the per-cell `value` check below, or it would
             # sail through as a silent extra "animal".
-            animal_id_ok = _is_numeric(animal_id)
+            animal_id_ok = _is_plausible_animal_id(animal_id)
             col_values = raw.iloc[2:, col_pos].tolist()
             for sample, value in zip(samples, col_values):
                 # Likewise, a trailing 'Mean'/'SD' summary ROW has a
@@ -224,7 +259,9 @@ def load_workbook_long(
                     reasons = []
                     if not animal_id_ok:
                         reasons.append(
-                            f"column header {animal_id!r} is not a plausible animal ID"
+                            f"column header {animal_id!r} is blank or names a summary "
+                            "statistic (e.g. Mean/SD) rather than an animal -- "
+                            "delete the summary column and re-upload"
                         )
                     if not sample_ok:
                         reasons.append(
