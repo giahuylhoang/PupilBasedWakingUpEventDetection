@@ -885,6 +885,7 @@ def test_highpass_cutoff_well_below_nyquist_is_applied_and_recorded():
 
 # --- statistics, duplicate traces, and per-animal xscale ----------------
 
+@requires_sample_file
 def test_statistics_section_renders_paired_and_region_tables():
     """The statistics tables reach the UI, with the direction of the
     comparison stated ('pre' as baseline, not the alphabetically-first
@@ -918,6 +919,7 @@ def test_statistics_section_renders_paired_and_region_tables():
     assert len(region_tables[0]) == 2  # one row per band
 
 
+@requires_sample_file
 def test_statistics_download_buttons_are_offered():
     at = _upload_sample_and_configure(_fresh_app())
     labels = [b.label for b in at.download_button]
@@ -925,6 +927,7 @@ def test_statistics_download_buttons_are_offered():
     assert any("between-region statistics" in label for label in labels), labels
 
 
+@requires_sample_file
 def test_real_workbook_duplicate_column_is_surfaced_as_an_error():
     """The animal 461672 defect must be visible in the UI, not merely
     detectable by a function: its SpVB TMX column duplicates its SpVB pre
@@ -942,6 +945,7 @@ def test_real_workbook_duplicate_column_is_surfaced_as_an_error():
     assert any("n_zero_diff" in e for e in errors), errors
 
 
+@requires_sample_file
 def test_zero_difference_animal_is_counted_in_the_paired_table():
     at = _upload_sample_and_configure(_fresh_app())
     rendered = [df.value for df in at.dataframe]
@@ -958,6 +962,7 @@ def test_zero_difference_animal_is_counted_in_the_paired_table():
     assert (spvb["wilcoxon_min_p"].to_numpy() > smfp["wilcoxon_min_p"].to_numpy()).all()
 
 
+@requires_sample_file
 def test_wilcoxon_floor_is_explained_at_small_n():
     at = _upload_sample_and_configure(_fresh_app())
     infos = [i.value for i in at.info]
@@ -966,6 +971,7 @@ def test_wilcoxon_floor_is_explained_at_small_n():
     ), infos
 
 
+@requires_sample_file
 def test_frequency_axis_radio_reaches_the_per_animal_figures():
     """Companion to the group-average regression guard: the per-animal small
     multiples previously stayed locked to a log frequency axis while the
@@ -988,6 +994,7 @@ def test_frequency_axis_radio_reaches_the_per_animal_figures():
         assert all(ax.get_yscale() == "log" for ax in visible), "y axis must stay log"
 
 
+@requires_sample_file
 def test_non_normalized_run_warns_that_power_carries_vessel_size():
     at = _fresh_app()
     at = _upload_sample_and_configure(at)
