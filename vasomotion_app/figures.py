@@ -78,13 +78,27 @@ def plot_group_average(
 
 
 def plot_per_animal_small_multiples(
-    psd_table: pd.DataFrame, region: str, max_freq: float = 0.5
+    psd_table: pd.DataFrame,
+    region: str,
+    max_freq: float = 0.5,
+    xscale: str = "log",
+    yscale: str = "log",
 ) -> plt.Figure:
     """Small-multiples grid, one subplot per animal, all conditions
     overlaid. Grid slots beyond the animal count are set invisible (not
     merely `axis("off")`, which leaves `get_visible()` True and hides only
     the ticks/spines) so the visible-axes count is exactly the animal
-    count."""
+    count.
+
+    `xscale`/`yscale` default to "log" so this signature stays
+    backward-compatible with every existing caller, but they exist because
+    the app's frequency-axis control previously reached only
+    `plot_group_average` -- leaving the per-animal panel locked to log while
+    the group figure right above it switched to linear, which reads as a
+    rendering bug rather than as a deliberate scope limit. A linear
+    frequency axis is the right choice for showing a sharp peak in a narrow
+    0-0.1 Hz window; log is right for inspecting 1/f slope.
+    """
     sub = _filtered_or_raise(
         psd_table,
         (psd_table["region"] == region) & (psd_table["frequency"] <= max_freq),
@@ -102,8 +116,8 @@ def plot_per_animal_small_multiples(
             cond_df = cond_df.sort_values("frequency")
             ax.plot(cond_df["frequency"], cond_df["power"], label=str(condition))
         ax.set_title(str(animal), fontsize=10)
-        ax.set_xscale("log")
-        ax.set_yscale("log")
+        ax.set_xscale(xscale)
+        ax.set_yscale(yscale)
         ax.legend(frameon=False, fontsize=7)
     for j in range(n, nrows * ncols):
         axes[j // ncols][j % ncols].set_visible(False)
@@ -113,7 +127,12 @@ def plot_per_animal_small_multiples(
 
 
 def plot_method_comparison(
-    psd_tables: dict[str, pd.DataFrame], region: str, condition: str, max_freq: float = 0.5
+    psd_tables: dict[str, pd.DataFrame],
+    region: str,
+    condition: str,
+    max_freq: float = 0.5,
+    xscale: str = "log",
+    yscale: str = "log",
 ) -> plt.Figure:
     """Overlay group-average spectra from 2-3 methods on one axes, for a
     single region/condition. `psd_tables` maps a method label to its PSD
@@ -138,8 +157,8 @@ def plot_method_comparison(
         pivot = sub.pivot_table(index="frequency", columns="animal", values="power").sort_index()
         mean = pivot.mean(axis=1)
         ax.plot(mean.index, mean.values, label=label)
-    ax.set_xscale("log")
-    ax.set_yscale("log")
+    ax.set_xscale(xscale)
+    ax.set_yscale(yscale)
     ax.set_xlabel("Frequency (Hz)")
     ax.set_ylabel("Power")
     ax.set_title(f"Method comparison -- {region} / {condition}")

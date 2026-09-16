@@ -440,3 +440,88 @@ def test_band_power_percent_diff_rejects_band_missing_from_a_table():
     }
     with pytest.raises(ValueError, match="low"):
         band_power_percent_diff(band_tables, reference_method="A", band_names=["low"])
+
+
+# --------------------------------------------------------------------------
+# xscale reaches every figure, not just the group average
+# --------------------------------------------------------------------------
+
+def _xscale_psd_table():
+    rows = []
+    for animal in (1, 2):
+        for condition in ("pre", "TMX"):
+            for freq in (0.01, 0.02, 0.05, 0.1, 0.2):
+                rows.append(
+                    {
+                        "animal": animal, "sex": "M", "region": "R1",
+                        "condition": condition, "frequency": freq, "power": 1.0 / freq,
+                    }
+                )
+    return pd.DataFrame(rows)
+
+
+def test_per_animal_small_multiples_defaults_to_log():
+    """The default must not change: every existing caller and the saved
+    figures in the results zip rely on it."""
+    fig = plot_per_animal_small_multiples(_xscale_psd_table(), "R1")
+    try:
+        visible = [ax for ax in fig.axes if ax.get_visible()]
+        assert visible, "precondition: at least one visible axes"
+        for ax in visible:
+            assert ax.get_xscale() == "log"
+            assert ax.get_yscale() == "log"
+    finally:
+        plt.close(fig)
+
+
+def test_per_animal_small_multiples_honours_a_linear_frequency_axis():
+    """Regression lock on the fix: this figure previously stayed on a log
+    frequency axis while the group-average figure directly above it switched
+    to linear, which reads as a rendering bug. The y axis must stay log --
+    only the frequency axis is user-controlled here."""
+    fig = plot_per_animal_small_multiples(
+        _xscale_psd_table(), "R1", xscale="linear"
+    )
+    try:
+        visible = [ax for ax in fig.axes if ax.get_visible()]
+        assert visible
+        for ax in visible:
+            assert ax.get_xscale() == "linear"
+            assert ax.get_yscale() == "log"
+    finally:
+        plt.close(fig)
+
+
+def test_per_animal_small_multiples_applies_the_scale_to_every_subplot():
+    """Not just the first one: a per-axes loop is easy to write so the scale
+    is set once outside it."""
+    table = _xscale_psd_table()
+    extra = table[table["animal"] == 1].copy()
+    for animal in (3, 4, 5):
+        clone = extra.copy()
+        clone["animal"] = animal
+        table = pd.concat([table, clone], ignore_index=True)
+    fig = plot_per_animal_small_multiples(table, "R1", xscale="linear")
+    try:
+        visible = [ax for ax in fig.axes if ax.get_visible()]
+        assert len(visible) == 5
+        assert all(ax.get_xscale() == "linear" for ax in visible)
+    finally:
+        plt.close(fig)
+
+
+def test_method_comparison_honours_the_frequency_scale():
+    table = _xscale_psd_table()
+    tables = {"periodogram": table, "multitaper_welch": table}
+    fig = plot_method_comparison(tables, "R1", "pre", xscale="linear")
+    try:
+        assert fig.axes[0].get_xscale() == "linear"
+        assert fig.axes[0].get_yscale() == "log"
+    finally:
+        plt.close(fig)
+
+    fig = plot_method_comparison(tables, "R1", "pre")
+    try:
+        assert fig.axes[0].get_xscale() == "log"
+    finally:
+        plt.close(fig)

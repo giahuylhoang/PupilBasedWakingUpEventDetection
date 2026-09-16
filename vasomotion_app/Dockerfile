@@ -37,7 +37,16 @@ RUN pip install --no-cache-dir -r /app/requirements.txt
 # same pattern already used by the sibling root Dockerfile, which copies
 # scripts/labeling_server.py to /app/scripts/labeling_server.py rather than
 # flattening it to /app/labeling_server.py.
-COPY __init__.py io_excel.py preprocess.py psd_methods.py bands.py figures.py bundle.py app.py /app/vasomotion_app/
+#
+# Copied as a glob rather than as an explicit filename list. The list form
+# had a silent, deploy-only failure mode: adding a new module (stats.py) and
+# importing it from app.py left every one of the 246 local tests passing
+# while the built container crashed on startup with ModuleNotFoundError,
+# because nothing outside this file knows the list exists. The glob matches
+# only top-level modules -- tests/ is a subdirectory and is not copied --
+# and tests/test_docker_smoke.sh asserts the module set actually present in
+# the image matches this directory.
+COPY *.py /app/vasomotion_app/
 
 EXPOSE 8080
 

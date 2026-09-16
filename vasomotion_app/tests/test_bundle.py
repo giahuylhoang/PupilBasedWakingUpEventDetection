@@ -429,3 +429,118 @@ def test_bundle_module_has_no_statistics_imports():
     imported = _imported_module_names(bundle_module)
     assert "scipy" not in imported  # scipy.stats specifically is the concern
     assert "statsmodels" not in imported
+
+
+def test_build_results_zip_adds_trace_stats_only_when_supplied():
+    # The default must leave the zip's member list exactly as it was -- an
+    # existing caller that does not ask for per-trace statistics must not
+    # start shipping a file it never requested. (The companion assertion
+    # that the default namelist is unchanged is
+    # test_build_results_zip_contains_expected_files above.)
+    band_summary = pd.DataFrame({"animal": [1], "low": [0.5]})
+    full_psd = pd.DataFrame({"frequency": [0.1], "power": [1.0]})
+    parameters = {"app_version": "1.0.0", "fs": 2.0}
+    trace_stats = pd.DataFrame(
+        {"animal": [1], "sd_normalized": [0.0123], "sd_analyzed": [0.0011]}
+    )
+
+    without = build_results_zip(band_summary, full_psd, {}, parameters)
+    with zipfile.ZipFile(io.BytesIO(without)) as zf:
+        assert "trace_stats.csv" not in zf.namelist()
+
+    with_stats = build_results_zip(
+        band_summary, full_psd, {}, parameters, trace_stats=trace_stats
+    )
+    with zipfile.ZipFile(io.BytesIO(with_stats)) as zf:
+        assert "trace_stats.csv" in zf.namelist()
+        roundtripped = pd.read_csv(io.BytesIO(zf.read("trace_stats.csv")))
+        assert roundtripped.iloc[0]["sd_normalized"] == pytest.approx(0.0123)
+        assert roundtripped.iloc[0]["sd_analyzed"] == pytest.approx(0.0011)
+
+
+# --------------------------------------------------------------------------
+# Statistics tables in the results zip
+# --------------------------------------------------------------------------
+
+def _minimal_zip_inputs():
+    return (
+        pd.DataFrame({"animal": [1], "low": [0.5]}),
+        pd.DataFrame({"frequency": [0.1], "power": [1.0]}),
+        {},
+        {"app_version": "1.0.0", "fs": 2.0},
+    )
+
+
+def test_build_results_zip_omits_statistics_members_when_not_supplied():
+    """Backward-compatibility lock: a caller that does not ask for
+    statistics must get exactly the member list it always got."""
+    band_summary, full_psd, figs, parameters = _minimal_zip_inputs()
+    zip_bytes = build_results_zip(band_summary, full_psd, figs, parameters)
+    with zipfile.ZipFile(io.BytesIO(zip_bytes)) as zf:
+        assert set(zf.namelist()) == {"band_summary.csv", "full_psd.csv", "parameters.json"}
+
+
+def test_build_results_zip_adds_each_statistics_table_independently():
+    band_summary, full_psd, figs, parameters = _minimal_zip_inputs()
+    paired = pd.DataFrame({"region": ["R1"], "band": ["low"], "t_p": [0.04]})
+    region = pd.DataFrame({"band": ["low"], "welch_p": [0.2]})
+
+    only_paired = build_results_zip(
+        band_summary, full_psd, figs, parameters, stats_paired=paired
+    )
+    with zipfile.ZipFile(io.BytesIO(only_paired)) as zf:
+        assert "stats_paired.csv" in zf.namelist()
+        assert "stats_region.csv" not in zf.namelist()
+
+    both = build_results_zip(
+        band_summary, full_psd, figs, parameters,
+        stats_paired=paired, stats_region=region,
+    )
+    with zipfile.ZipFile(io.BytesIO(both)) as zf:
+        names = set(zf.namelist())
+        assert {"stats_paired.csv", "stats_region.csv"} <= names
+        back = pd.read_csv(io.BytesIO(zf.read("stats_paired.csv")))
+        assert back.iloc[0]["t_p"] == pytest.approx(0.04)
+
+
+def test_build_results_zip_preserves_a_nan_p_value_as_blank_not_zero():
+    """A NaN p-value means the test could not be run (stats._run_paired_
+    tests). Arriving in a spreadsheet as 0 would read as overwhelming
+    significance, which is the worst possible way for this to fail."""
+    band_summary, full_psd, figs, parameters = _minimal_zip_inputs()
+    paired = pd.DataFrame(
+        {"region": ["R1"], "band": ["low"], "t_p": [float("nan")], "wilcoxon_p": [0.03]}
+    )
+    zip_bytes = build_results_zip(
+        band_summary, full_psd, figs, parameters, stats_paired=paired
+    )
+    with zipfile.ZipFile(io.BytesIO(zip_bytes)) as zf:
+        back = pd.read_csv(io.BytesIO(zf.read("stats_paired.csv")))
+    assert back["t_p"].isna().all()
+    assert (back["t_p"] != 0.0).all()
+    assert back.iloc[0]["wilcoxon_p"] == pytest.approx(0.03)
+
+
+def test_build_results_zip_roundtrips_the_real_statistics_column_set():
+    """The full declared column set survives the CSV roundtrip -- catches a
+    column name that pandas would mangle or an index leaking in."""
+    from vasomotion_app import stats as stats_module
+
+    band_summary, full_psd, figs, parameters = _minimal_zip_inputs()
+    bs = pd.DataFrame(
+        {
+            "animal": [1, 2, 3, 1, 2, 3],
+            "sex": ["M"] * 6,
+            "region": ["R1"] * 6,
+            "condition": ["pre"] * 3 + ["TMX"] * 3,
+            "low": [1.0, 2.0, 3.0, 1.4, 2.9, 3.2],
+        }
+    )
+    paired = stats_module.paired_band_tests(bs)
+    zip_bytes = build_results_zip(
+        band_summary, full_psd, figs, parameters, stats_paired=paired
+    )
+    with zipfile.ZipFile(io.BytesIO(zip_bytes)) as zf:
+        back = pd.read_csv(io.BytesIO(zf.read("stats_paired.csv")))
+    assert list(back.columns) == stats_module.PAIRED_TEST_COLUMNS
+    assert len(back) == 1

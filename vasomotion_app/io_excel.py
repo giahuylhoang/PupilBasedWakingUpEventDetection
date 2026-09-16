@@ -7,6 +7,7 @@ region and a condition, e.g. 'SpVB pre' -> region='SpVB', condition='pre'.
 """
 from __future__ import annotations
 
+import numpy as np
 import pandas as pd
 
 
@@ -194,6 +195,106 @@ def check_animal_pairing(long_df: pd.DataFrame) -> dict:
                 "treat paired comparisons here with caution."
             )
     return {"n_paired_per_region": n_paired_per_region, "warnings": warnings}
+
+
+def check_duplicate_traces(long_df: pd.DataFrame) -> dict:
+    """Find traces whose values are exactly identical to another trace.
+
+    Motivated by a real defect in a real submitted workbook: animal 461672's
+    'SpVB TMX' column was a byte-for-byte copy of its 'SpVB pre' column, all
+    1173 cells. Nothing upstream rejects that -- both columns are fully
+    numeric, both are the right length, and the animal appears correctly in
+    both conditions, so `check_animal_pairing` reports it as perfectly
+    paired. It surfaced only because the two PSD curves overplotted exactly
+    and a reader noticed one line where two were expected.
+
+    Two shapes are checked, both of which are copy-paste accidents rather
+    than measurements:
+
+      'within_animal'  The same animal has identical traces in two
+          conditions. This is the 461672 case, and it is the damaging one:
+          it contributes a difference of exactly zero to every paired
+          statistic, pulling the estimated effect toward the null while
+          still counting toward n.
+      'across_animals' Two different animals share an identical trace in
+          the same condition. Two vessels cannot produce identical
+          floating-point sequences, so this is a duplicated column too --
+          it inflates n with a replicate that carries no independent
+          information.
+
+    Exact equality is the test, deliberately, with no tolerance: near-equal
+    traces are a legitimate (if striking) biological result, whereas
+    bit-identical ones are not obtainable from two separate measurements.
+    Candidate pairs are found by hashing each trace's value tuple, then
+    confirmed by real element-wise comparison, so a hash collision cannot
+    produce a false report.
+
+    Returns a dict with keys:
+      'duplicates': list of dicts, each {'kind', 'region', 'a', 'b',
+          'n_samples'}, where 'a'/'b' name the two traces involved.
+      'warnings': list[str] -- one human-readable entry per duplicate pair.
+    """
+    traces: dict[tuple, np.ndarray] = {}
+    for keys, group in long_df.sort_values("sample").groupby(
+        ["region", "condition", "animal"], sort=False
+    ):
+        traces[keys] = group["value"].to_numpy()
+
+    by_hash: dict[tuple, list[tuple]] = {}
+    for key, values in traces.items():
+        digest = (len(values), hash(values.tobytes()))
+        by_hash.setdefault(digest, []).append(key)
+
+    duplicates = []
+    for candidates in by_hash.values():
+        if len(candidates) < 2:
+            continue
+        for i in range(len(candidates)):
+            for j in range(i + 1, len(candidates)):
+                key_a, key_b = candidates[i], candidates[j]
+                if not np.array_equal(traces[key_a], traces[key_b]):
+                    continue
+                region_a, condition_a, animal_a = key_a
+                region_b, condition_b, animal_b = key_b
+                if animal_a == animal_b and region_a == region_b:
+                    kind = "within_animal"
+                elif condition_a == condition_b and region_a == region_b:
+                    kind = "across_animals"
+                else:
+                    kind = "unrelated"
+                duplicates.append(
+                    {
+                        "kind": kind,
+                        "region": region_a if region_a == region_b else f"{region_a}/{region_b}",
+                        "a": f"{region_a} {condition_a} animal {animal_a}",
+                        "b": f"{region_b} {condition_b} animal {animal_b}",
+                        "n_samples": int(len(traces[key_a])),
+                    }
+                )
+
+    warnings = []
+    for dup in sorted(duplicates, key=lambda d: (d["kind"], d["a"], d["b"])):
+        if dup["kind"] == "within_animal":
+            consequence = (
+                "This animal's change between conditions is exactly zero, which biases any "
+                "paired statistic toward no effect. Almost certainly a duplicated column in "
+                "the workbook -- re-export this animal's trace before reporting a result."
+            )
+        elif dup["kind"] == "across_animals":
+            consequence = (
+                "Two vessels cannot produce identical values, so one of these columns is a "
+                "copy of the other. It inflates n without adding information."
+            )
+        else:
+            consequence = (
+                "Identical values in two unrelated traces indicate a duplicated column."
+            )
+        warnings.append(
+            f"{dup['a']} and {dup['b']} have identical values in all "
+            f"{dup['n_samples']} samples. {consequence}"
+        )
+
+    return {"duplicates": duplicates, "warnings": warnings}
 
 
 def load_workbook_long(

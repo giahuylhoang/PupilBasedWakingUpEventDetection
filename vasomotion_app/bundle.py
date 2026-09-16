@@ -261,18 +261,38 @@ def build_results_zip(
     full_psd: pd.DataFrame,
     figures_by_name: dict[str, matplotlib.figure.Figure],
     parameters: dict,
+    trace_stats: pd.DataFrame | None = None,
+    stats_paired: pd.DataFrame | None = None,
+    stats_region: pd.DataFrame | None = None,
 ) -> bytes:
     """Bundle the band summary CSV, full PSD CSV, every figure as a PNG, and
     parameters.json into one zip file. Returns the zip file's raw bytes.
 
     CSV serialisation uses pandas' own `to_csv`/`read_csv` defaults, which
     already round-trip NaN correctly (an empty field, read back as NaN) --
-    nothing here fills, rounds, or drops a NaN band value.
+    nothing here fills, rounds, or drops a NaN band value. That matters more
+    for the statistics tables than for the others: a NaN p-value means "this
+    test could not be run" (see stats._run_paired_tests) and must not arrive
+    in a spreadsheet as 0.
+
+    `trace_stats` (from preprocess.trace_stats_table), `stats_paired` (from
+    stats.paired_band_tests) and `stats_region` (from
+    stats.region_change_tests) are all optional and each adds its CSV only
+    when supplied. They default to None rather than being required so the
+    zip's member list stays exactly what it was for every existing caller --
+    a caller that does not ask for per-trace statistics or for inferential
+    statistics does not silently start shipping extra files.
     """
     buffer = io.BytesIO()
     with zipfile.ZipFile(buffer, "w", zipfile.ZIP_DEFLATED) as zf:
         zf.writestr("band_summary.csv", band_summary.to_csv(index=False))
         zf.writestr("full_psd.csv", full_psd.to_csv(index=False))
+        if trace_stats is not None:
+            zf.writestr("trace_stats.csv", trace_stats.to_csv(index=False))
+        if stats_paired is not None:
+            zf.writestr("stats_paired.csv", stats_paired.to_csv(index=False))
+        if stats_region is not None:
+            zf.writestr("stats_region.csv", stats_region.to_csv(index=False))
         for name, fig in figures_by_name.items():
             fig_buffer = io.BytesIO()
             fig.savefig(fig_buffer, format="png", dpi=150)

@@ -54,13 +54,16 @@ bytes (which `st.download_button` does not expose to AppTest either).
 """
 from __future__ import annotations
 
+import inspect
 import os
 
 import openpyxl
 import pytest
 from streamlit.testing.v1 import AppTest
 
+from vasomotion_app import app as app_module
 from vasomotion_app import bundle
+from vasomotion_app import preprocess
 from vasomotion_app.psd_methods import PSDParams
 
 APP_PATH = os.path.join(os.path.dirname(__file__), "..", "app.py")
@@ -204,8 +207,28 @@ def test_uploading_sample_workbook_produces_results():
     download_labels = {b.label for b in at.download_button}
     assert {
         "Download band summary (CSV)", "Download full PSD (CSV)",
+        "Download per-trace statistics (CSV)",
         "Download parameters.json", "Download everything (.zip)",
     } <= download_labels
+
+    # The exported per-trace statistics must actually reach the screen with
+    # both SD columns -- the whole point of the table is that a user can
+    # pull variability out of the app, so a silently missing column would
+    # look like a working export right up until someone needed it.
+    trace_stats_tables = [
+        d.value for d in at.dataframe
+        if list(d.value.columns) == preprocess.TRACE_STATS_COLUMNS
+    ]
+    assert len(trace_stats_tables) == 1
+    stats = trace_stats_tables[0]
+    assert len(stats) == 24  # same 24 traces as the band summary above
+    assert (stats["sd_normalized"] >= stats["sd_analyzed"]).all()
+    assert (stats["sd_normalized"] > 0).all()
+    # signal_type is "area" in this run, so mean_raw is in diameter units:
+    # the workbook's raw values span 249..4856, whose square roots span
+    # ~15.8..69.7. A mean_raw above that ceiling would mean the area ->
+    # diameter conversion was skipped for this table.
+    assert stats["mean_raw"].max() < 70.0
 
 
 @requires_sample_file
@@ -858,3 +881,200 @@ def test_highpass_cutoff_well_below_nyquist_is_applied_and_recorded():
     assert at.session_state["_test_highpass_cutoff"] == 0.005
     warnings = [w.value for w in at.warning]
     assert not any("Nyquist" in w for w in warnings)
+
+
+# --- statistics, duplicate traces, and per-animal xscale ----------------
+
+def test_statistics_section_renders_paired_and_region_tables():
+    """The statistics tables reach the UI, with the direction of the
+    comparison stated ('pre' as baseline, not the alphabetically-first
+    'TMX')."""
+    at = _upload_sample_and_configure(_fresh_app())
+    assert not at.exception
+
+    headers = [h.value for h in at.header]
+    assert "Statistics" in headers
+
+    subheaders = [s.value for s in at.subheader]
+    assert any("pre vs TMX" in s for s in subheaders), subheaders
+    assert any("Between regions" in s for s in subheaders), subheaders
+
+    # Both statistics dataframes are rendered, alongside the band summary,
+    # full PSD and per-trace tables.
+    rendered = [df.value for df in at.dataframe]
+    paired = [
+        d for d in rendered
+        if "wilcoxon_p" in getattr(d, "columns", []) and "region" in getattr(d, "columns", [])
+    ]
+    assert len(paired) == 1, "expected exactly one paired-statistics table"
+    table = paired[0]
+    # 2 regions x 2 default bands.
+    assert len(table) == 4
+    assert set(table["condition_baseline"]) == {"pre"}
+    assert set(table["condition_treatment"]) == {"TMX"}
+
+    region_tables = [d for d in rendered if "hedges_g" in getattr(d, "columns", [])]
+    assert len(region_tables) == 1
+    assert len(region_tables[0]) == 2  # one row per band
+
+
+def test_statistics_download_buttons_are_offered():
+    at = _upload_sample_and_configure(_fresh_app())
+    labels = [b.label for b in at.download_button]
+    assert any("paired statistics" in label for label in labels), labels
+    assert any("between-region statistics" in label for label in labels), labels
+
+
+def test_real_workbook_duplicate_column_is_surfaced_as_an_error():
+    """The animal 461672 defect must be visible in the UI, not merely
+    detectable by a function: its SpVB TMX column duplicates its SpVB pre
+    column, which every other check in the app reports as clean."""
+    at = _upload_sample_and_configure(_fresh_app())
+    assert not at.exception
+
+    errors = [e.value for e in at.error]
+    assert any("Identical traces detected" in e for e in errors), errors
+
+    warnings = [w.value for w in at.warning]
+    assert any("461672" in w and "identical values in all 1173 samples" in w for w in warnings)
+
+    # And the consequence is stated where the numbers are, not only at the top.
+    assert any("n_zero_diff" in e for e in errors), errors
+
+
+def test_zero_difference_animal_is_counted_in_the_paired_table():
+    at = _upload_sample_and_configure(_fresh_app())
+    rendered = [df.value for df in at.dataframe]
+    paired = _one(
+        [d for d in rendered if "n_zero_diff" in getattr(d, "columns", [])],
+        "the paired-statistics table",
+    )
+    spvb = paired[paired["region"] == "SpVB"]
+    smfp = paired[paired["region"] == "SmFP"]
+    # 461672 is in SpVB only, so exactly that region shows the zero pair.
+    assert (spvb["n_zero_diff"] == 1).all()
+    assert (smfp["n_zero_diff"] == 0).all()
+    # Dropping the zero pair raises the achievable Wilcoxon floor.
+    assert (spvb["wilcoxon_min_p"].to_numpy() > smfp["wilcoxon_min_p"].to_numpy()).all()
+
+
+def test_wilcoxon_floor_is_explained_at_small_n():
+    at = _upload_sample_and_configure(_fresh_app())
+    infos = [i.value for i in at.info]
+    assert any(
+        "cannot return a p-value below" in i and "statement about n" in i for i in infos
+    ), infos
+
+
+def test_frequency_axis_radio_reaches_the_per_animal_figures():
+    """Companion to the group-average regression guard: the per-animal small
+    multiples previously stayed locked to a log frequency axis while the
+    group figure above them switched to linear."""
+    at = _upload_sample_and_configure(_fresh_app())
+    figures_by_kind = at.session_state["_test_figures"]
+    for region_fig in figures_by_kind["per_animal"].values():
+        visible = [ax for ax in region_fig.axes if ax.get_visible()]
+        assert visible
+        assert all(ax.get_xscale() == "log" for ax in visible)
+
+    _radio(at, ["log", "linear"]).set_value("linear")
+    at.run()
+    assert not at.exception
+    figures_by_kind = at.session_state["_test_figures"]
+    for region_fig in figures_by_kind["per_animal"].values():
+        visible = [ax for ax in region_fig.axes if ax.get_visible()]
+        assert visible
+        assert all(ax.get_xscale() == "linear" for ax in visible), "per-animal axis ignored xscale"
+        assert all(ax.get_yscale() == "log" for ax in visible), "y axis must stay log"
+
+
+def test_non_normalized_run_warns_that_power_carries_vessel_size():
+    at = _fresh_app()
+    at = _upload_sample_and_configure(at)
+    _selectbox(at, "Normalise").set_value("none")
+    at.run()
+    assert not at.exception
+    warnings = [w.value for w in at.warning]
+    assert any(
+        "Normalisation is off" in w and "baseline vessel diameter" in w for w in warnings
+    ), warnings
+
+
+def test_single_condition_workbook_reports_no_paired_comparison(tmp_path):
+    """A one-condition workbook is valid input for the spectra and band
+    tables; it just has no paired contrast. That must read as information,
+    not as an error or a crash."""
+    values = [[10.0 + i, 11.0 + i, 12.0 + i] for i in range(300)]
+    path = tmp_path / "single_condition.xlsx"
+    _write_workbook(path, {"R1 pre": ([101, 102, 103], ["M", "M", "F"], values)})
+    at = _fresh_app()
+    with open(path, "rb") as f:
+        content = f.read()
+    _excel_uploader(at).set_value((
+        "single_condition.xlsx", content,
+        "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+    ))
+    _number_input(at, "Sampling rate (Hz)").set_value(2.0)
+    _radio(at, ["Area", "Diameter"]).set_value("Area")
+    at.run()
+    assert not at.exception
+    infos = [i.value for i in at.info]
+    assert any("No paired comparison available" in i for i in infos), infos
+
+
+def test_app_passes_both_statistics_tables_into_the_results_zip():
+    """AppTest's DownloadButton does not expose the file bytes, so the zip's
+    contents cannot be read back through the harness (its member list is
+    locked in test_bundle.py instead). What is checked here is the wiring:
+    app.py must actually forward both statistics tables to
+    build_results_zip, not compute them for on-screen display only."""
+    source = inspect.getsource(app_module)
+    call_start = source.index("bundle_module.build_results_zip(")
+    call = source[call_start:source.index(")", source.index("parameters", call_start))]
+    assert "stats_paired=stats_paired" in call, call
+    assert "stats_region=stats_region" in call, call
+    assert "trace_stats=trace_stats" in call, call
+
+
+def test_dockerfile_copies_every_top_level_module():
+    """Guards a deploy-only failure mode with no local symptom.
+
+    The Dockerfile previously listed each module by name. Adding stats.py and
+    importing it from app.py left the whole test suite green while the built
+    container died at startup with ModuleNotFoundError, because the COPY list
+    is the only place that knowledge lived and nothing verified it. This test
+    fails in CI instead of in production: every top-level module in
+    vasomotion_app/ must be reachable through the Dockerfile's COPY
+    directives, whether they are spelled out or globbed."""
+    import fnmatch
+
+    app_dir = os.path.dirname(os.path.abspath(app_module.__file__))
+    dockerfile = os.path.join(app_dir, "Dockerfile")
+    with open(dockerfile) as f:
+        copy_lines = [
+            line for line in f if line.strip().startswith("COPY")
+            and "/app/vasomotion_app/" in line
+        ]
+    assert copy_lines, "no COPY into /app/vasomotion_app/ found in the Dockerfile"
+
+    patterns = []
+    for line in copy_lines:
+        # "COPY a.py b.py /app/vasomotion_app/" -> the sources are everything
+        # between the COPY keyword and the final destination argument.
+        parts = line.split()[1:-1]
+        patterns.extend(parts)
+
+    modules = sorted(
+        name for name in os.listdir(app_dir)
+        if name.endswith(".py") and os.path.isfile(os.path.join(app_dir, name))
+    )
+    assert "stats.py" in modules, "precondition: stats.py exists in the package"
+
+    missing = [
+        module for module in modules
+        if not any(fnmatch.fnmatch(module, pattern) for pattern in patterns)
+    ]
+    assert not missing, (
+        f"module(s) {missing} are never copied into the container image, so the deployed "
+        f"app will fail to import them. Dockerfile COPY sources: {patterns}"
+    )

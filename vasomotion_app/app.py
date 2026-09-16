@@ -100,6 +100,7 @@ from vasomotion_app import figures as figures_module
 from vasomotion_app import io_excel
 from vasomotion_app import preprocess
 from vasomotion_app import psd_methods
+from vasomotion_app import stats as stats_module
 from vasomotion_app.psd_methods import PSDParams
 
 # Imported after figures_module (which calls matplotlib.use("Agg") as the
@@ -580,6 +581,30 @@ else:
     for pairing_warning in pairing["warnings"]:
         st.warning(pairing_warning)
 
+    # A duplicated column passes every check above: it is fully numeric, the
+    # right length, and leaves the animal correctly present in both
+    # conditions, so check_animal_pairing calls it perfectly paired. The one
+    # real workbook this tool was built against had exactly this defect
+    # (animal 461672's SpVB TMX column was a byte-for-byte copy of its SpVB
+    # pre column, all 1173 cells), and it was invisible on screen because
+    # the two identical PSD curves overplotted into what looked like a
+    # single condition. Surfaced with st.error rather than st.warning
+    # because, unlike a band-edge notice, the affected numbers are wrong
+    # rather than merely approximate -- but deliberately NOT st.stop(), so
+    # the rest of the run still produces its tables and the user can see the
+    # scale of the problem before deciding whether to re-export.
+    duplicates = io_excel.check_duplicate_traces(long_df)
+    if duplicates["warnings"]:
+        st.error(
+            "**Identical traces detected.** Two vessels cannot produce identical "
+            "floating-point values, so the columns below are duplicates in the source "
+            "workbook, not measurements. Results are still computed so you can see the "
+            "effect, but any statistic involving these traces is invalid until the "
+            "workbook is fixed:"
+        )
+        for duplicate_warning in duplicates["warnings"]:
+            st.warning(duplicate_warning)
+
     try:
         bands_module.validate_band_names(band_defs)
     except ValueError as exc:
@@ -653,6 +678,19 @@ else:
             result["full_psd"], region, max_freq=max_freq, xscale=xscale, yscale="log",
         )
     result["figures"]["group_average"] = rerendered_group_average
+    # Same treatment for the per-animal small multiples. These previously
+    # stayed locked to figures.py's log default while the group figure
+    # directly above them switched to linear, which reads as a rendering bug
+    # rather than a deliberate limit -- and the lab asked specifically for
+    # both variants, since log is what you want for a 1/f slope and linear
+    # is what you want to show a sharp peak in a narrow 0-0.1 Hz window.
+    rerendered_per_animal = {}
+    for region, fig in result["figures"]["per_animal"].items():
+        plt.close(fig)
+        rerendered_per_animal[region] = figures_module.plot_per_animal_small_multiples(
+            result["full_psd"], region, max_freq=max_freq, xscale=xscale, yscale="log",
+        )
+    result["figures"]["per_animal"] = rerendered_per_animal
     # Exposed purely for the xscale regression test: st.pyplot renders a
     # static image with no queryable scale, so this is the only way a test
     # can confirm which scale was actually applied to the real Figure.
@@ -685,6 +723,136 @@ else:
         st.download_button(
             "Download full PSD (CSV)", result["full_psd"].to_csv(index=False), file_name="full_psd.csv",
         )
+
+    # Per-trace amplitude statistics. Computed here rather than inside
+    # bundle.run_pipeline because Task 7's end-to-end test locks that
+    # function's return dict to exactly {full_psd, band_summary, figures};
+    # the settings passed are the same ones handed to run_pipeline above, so
+    # these numbers describe the very traces that produced the spectra.
+    trace_stats = preprocess.trace_stats_table(
+        long_df, fs=fs, signal_type=signal_type, normalize=normalize,
+        detrend_method=detrend_method, highpass_cutoff=highpass_cutoff,
+        highpass_order=highpass_order, trim_seconds=trim_seconds,
+    )
+    with st.expander("Per-trace amplitude statistics"):
+        st.caption(
+            "Two standard deviations, because they answer different questions. "
+            "**sd_normalized** is the normalised trace before the high-pass filter "
+            "and detrend -- slow drift included, usually what 'how much did the vessel "
+            "fluctuate' means. **sd_analyzed** is the trace the PSD was computed from, "
+            "after high-pass and detrend, so it is the smaller number and is close to "
+            "total band power by construction. **mean_raw** / **sd_raw** carry the "
+            "absolute scale that dx/x0 divides out"
+            + (
+                " -- in diameter units, since Area was selected and the tool takes the "
+                "square root before normalising."
+                if signal_type == "area"
+                else " -- in the diameter units of your input."
+            )
+        )
+        if normalize == "zscore":
+            st.info(
+                "Normalisation is z-score, which sets the standard deviation to 1 by "
+                "definition, so sd_normalized is 1.0 for every trace and carries no "
+                "information. Use sd_raw for absolute variability, or switch "
+                "normalisation to dx/x0 if you want a comparable normalised SD."
+            )
+        st.dataframe(trace_stats)
+        st.download_button(
+            "Download per-trace statistics (CSV)", trace_stats.to_csv(index=False),
+            file_name="trace_stats.csv",
+        )
+
+    # Statistics. Added at the lab's request so the paired pre/post tests do
+    # not have to be redone by hand in another package. Kept out of
+    # bundle.run_pipeline for the same reason trace_stats is: Task 7's
+    # end-to-end test locks that function's return dict to exactly
+    # {full_psd, band_summary, figures}.
+    stats_paired = None
+    stats_region = None
+    st.header("Statistics")
+    try:
+        baseline, treatment = stats_module.resolve_condition_order(
+            long_df["condition"].unique()
+        )
+    except ValueError as exc:
+        # Not an error state: a one-condition or three-condition workbook is
+        # perfectly valid input for the spectra and band tables above, it
+        # just has no single paired contrast to test.
+        st.info(f"No paired comparison available. {exc}")
+    else:
+        stats_paired = stats_module.paired_band_tests(
+            band_summary, band_names=list(band_defs.keys()),
+            condition_order=(baseline, treatment),
+        )
+        stats_region = stats_module.region_change_tests(
+            band_summary, band_names=list(band_defs.keys()),
+            condition_order=(baseline, treatment),
+        )
+        st.caption(
+            f"Within-animal change from **{baseline}** to **{treatment}**, tested on log10 "
+            "band power. A difference of logs is a fold change, which is the quantity that "
+            "generalises across animals with different baseline vessel sizes -- a test on "
+            "raw power would be dominated by whichever animals happen to have the largest "
+            "vessels. Both a parametric (paired t) and a non-parametric (Wilcoxon "
+            "signed-rank) p-value are reported for every row rather than one being chosen "
+            "for you: at these sample sizes a normality test has almost no power to justify "
+            "such a choice, so the two agreeing is the reassurance and the two disagreeing "
+            "is itself the finding. `t_p_fdr` / `wilcoxon_p_fdr` are Benjamini-Hochberg "
+            "corrected across every row of this table."
+        )
+        if normalize == "none":
+            st.warning(
+                "Normalisation is off, so band power still carries each animal's absolute "
+                "vessel size. The paired tests below are largely protected from that -- "
+                "each animal is its own control -- but any comparison BETWEEN animals or "
+                "regions is confounded by baseline vessel diameter. `mean_raw` in the "
+                "per-trace statistics above is that baseline; either normalise, or carry "
+                "it into your model as a covariate."
+            )
+        if not stats_paired.empty:
+            floor = stats_paired["wilcoxon_min_p"].max()
+            if pd.notna(floor) and floor > 0.01:
+                st.info(
+                    f"At this sample size the Wilcoxon signed-rank test cannot return a "
+                    f"p-value below {floor:.3f} however large the effect (column "
+                    "`wilcoxon_min_p`, shown per row because a dropped zero-difference "
+                    "pair raises it further). A non-significant non-parametric result here "
+                    "is a statement about n, not evidence of no effect."
+                )
+            if (stats_paired["n_zero_diff"] > 0).any():
+                st.error(
+                    "One or more rows below include an animal whose change is exactly zero "
+                    "(`n_zero_diff`). That is the duplicated-column defect flagged at the "
+                    "top of this page, and it pulls the estimated effect toward no change "
+                    "while still counting toward n. Fix the workbook before reporting "
+                    "these numbers."
+                )
+        st.subheader(f"Paired: {baseline} vs {treatment}, per region")
+        st.dataframe(stats_paired)
+        st.download_button(
+            "Download paired statistics (CSV)", stats_paired.to_csv(index=False),
+            file_name="stats_paired.csv",
+        )
+        if stats_region.empty:
+            st.caption(
+                "The between-region comparison needs exactly two regions; with a different "
+                "number, which pair to compare is a question for you rather than a default "
+                "this tool should pick."
+            )
+        else:
+            st.subheader("Between regions: is the change different?")
+            st.caption(
+                "Each animal's own log10 fold change, compared between the two regions. "
+                "The regions contain **different animals**, so this comparison is unpaired "
+                "(Welch's t-test, which does not assume equal variances, plus Mann-Whitney "
+                "U). `hedges_g` is the effect size with the small-sample correction applied."
+            )
+            st.dataframe(stats_region)
+            st.download_button(
+                "Download between-region statistics (CSV)", stats_region.to_csv(index=False),
+                file_name="stats_region.csv",
+            )
 
     st.header("Per-animal spectra")
     for region, fig in result["figures"]["per_animal"].items():
@@ -740,7 +908,8 @@ else:
             first_region = sorted(long_df["region"].unique())[0]
             first_condition = sorted(long_df["condition"].unique())[0]
             comparison_fig = figures_module.plot_method_comparison(
-                psd_tables, first_region, first_condition, max_freq=max_freq
+                psd_tables, first_region, first_condition, max_freq=max_freq,
+                xscale=xscale, yscale="log",
             )
             st.pyplot(comparison_fig)
             plt.close(comparison_fig)
@@ -769,7 +938,8 @@ else:
     figures_by_name = {f"group_average_{r}": f for r, f in result["figures"]["group_average"].items()}
     figures_by_name.update({f"per_animal_{r}": f for r, f in result["figures"]["per_animal"].items()})
     zip_bytes = bundle_module.build_results_zip(
-        result["band_summary"], result["full_psd"], figures_by_name, parameters
+        result["band_summary"], result["full_psd"], figures_by_name, parameters,
+        trace_stats=trace_stats, stats_paired=stats_paired, stats_region=stats_region,
     )
     st.download_button("Download everything (.zip)", zip_bytes, file_name="vasomotion_psd_results.zip")
 

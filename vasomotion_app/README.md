@@ -1,8 +1,8 @@
 # Vasomotion PSD tool
 
-Upload vessel traces, get power spectra and band powers you can paste straight
-into Prism, SPSS or R. It does not do statistics — it produces the numbers you
-run statistics on.
+Upload vessel traces, get power spectra, band powers and paired statistics. Every
+number is exported as CSV, so you can redraw any figure or rerun any test in
+Prism, SPSS or R.
 
 ## Two things you must set, every time
 
@@ -41,12 +41,150 @@ If your sheet names don't follow the convention, use the manual override.
 ## What you get
 
 1. **Group-average spectra** — mean and SEM across animals. The presentable figure.
-2. **Band summary table** — one row per animal per condition, one column per band. This is the one for your stats software.
-3. **Full PSD table** — frequency against animal. Collapsed by default, it's large.
-4. **Per-animal spectra** — small multiples, so one odd animal is visible.
+2. **Band summary table** — one row per animal per condition, one column per band.
+3. **Statistics** — paired within-animal tests per band per region, plus a between-region comparison. See below.
+4. **Full PSD table** — frequency against animal. Collapsed by default, it's large.
+5. **Per-trace amplitude statistics** — one row per animal per condition, with the standard deviation of the trace and its absolute scale. Collapsed by default.
+6. **Per-animal spectra** — small multiples, so one odd animal is visible.
 
 Everything is shown on screen and downloadable. **Download Everything** gives a
-zip of all four plus `parameters.json`.
+zip of all six plus `parameters.json`.
+
+## Plotting the spectra yourself
+
+`full_psd.csv` is the trace data behind every figure, tidy long, one row per
+frequency point:
+
+| animal | sex | region | condition | frequency | power |
+| --- | --- | --- | --- | --- | --- |
+
+Filter to a region and condition, plot `power` against `frequency`, and you have
+the same curve the app drew. Two things to know:
+
+- It is **per animal**, not the group average. The group-average figure is the
+  mean across animals at each frequency, with SEM; compute that yourself from
+  these rows if you want to redraw it.
+- It is truncated at **Max frequency**. If you want to plot beyond 0.5 Hz, raise
+  that control before downloading — the rows above it are not in the file.
+
+## Bandpower differences
+
+`band_summary.csv` is one row per animal per condition, one column per band. The
+app now runs the paired comparison for you (below), but if you want the raw
+per-animal differences:
+
+```r
+# R
+library(tidyr); library(dplyr)
+read.csv("band_summary.csv") |>
+  select(animal, region, condition, ultra_low) |>
+  pivot_wider(names_from = condition, values_from = ultra_low) |>
+  mutate(diff = TMX - pre, pct = 100 * (TMX - pre) / pre)
+```
+
+## Statistics
+
+Two tables, because they answer different questions and have different designs.
+
+**`stats_paired.csv` — within-animal change, per band per region.** This is the
+primary result. Your workbook is a genuinely paired design (the same animal ID
+appears in both condition sheets), so this is the test that matches the data.
+
+**`stats_region.csv` — is the change different between regions?** Each animal's
+own fold change, compared between the two regions. The regions contain
+*different* animals, so this comparison is **unpaired** — Welch's t-test (not
+Student's) plus Mann-Whitney U.
+
+### What the columns mean
+
+| column | what it is |
+| --- | --- |
+| `fold_change` | The effect. 1.0 is no change, 2.0 is a doubling, 0.5 is a halving. |
+| `mean_log10_ratio`, `ci95_log10_*` | The same thing on the log scale the test ran on. Raise 10 to these to get a fold-change interval. |
+| `cohens_dz` | Paired effect size (mean/SD of the differences). |
+| `t_p`, `wilcoxon_p` | Uncorrected p, parametric and non-parametric. |
+| `t_p_fdr`, `wilcoxon_p_fdr` | Benjamini-Hochberg corrected across every row of the table. **Report these.** |
+| `n_pairs`, `n_excluded`, `n_zero_diff` | Who actually contributed, and who didn't. |
+| `wilcoxon_min_p` | The smallest p Wilcoxon *can* return at this n. See below. |
+| `notes` | Why an animal was excluded, in plain words. |
+
+### Four things to know before you report these
+
+**Tests run on log10 band power, not raw power.** Band power is positive and
+multiplicative — a vessel's power can double or halve, it cannot go negative — so
+a difference of logs (a fold change) is both better behaved and the quantity that
+generalises across animals with different baseline vessel sizes. A paired test on
+raw power would be dominated by whichever animals have the largest vessels.
+
+**Both a parametric and a non-parametric p are reported, deliberately.** At n=6 a
+normality test has almost no power to justify picking one, so you get both. Them
+agreeing is your reassurance. Them disagreeing is itself the finding.
+
+**Wilcoxon has a hard floor at small n.** With 6 pairs it cannot return p < 0.031
+no matter how large the effect; with 5 pairs, p < 0.063. That is a fact about the
+test at that sample size, not about your data, which is why `wilcoxon_min_p` is
+in the table. A non-significant Wilcoxon result at n=6 is a statement about n.
+
+**A blank p means the test could not run**, not p=0. It happens when fewer than
+two animals paired, or when the change is identical across every animal (no
+variance to test). Blanks are excluded from the FDR correction rather than
+counted as hypotheses.
+
+### If you turn normalisation off
+
+Raw band power still carries each animal's absolute vessel size. The paired tests
+are largely protected — each animal is its own control — but any comparison
+*between* animals or regions is confounded by baseline vessel diameter. The app
+warns you, and `mean_raw` in `trace_stats.csv` is that baseline if you want it as
+a covariate. Normalising is the better option.
+
+## Duplicate columns are checked, and this has already mattered
+
+The tool compares every trace against every other and refuses to be quiet about
+exact matches. Two vessels cannot produce identical floating-point values, so an
+exact match is a copy-pasted column, not a measurement.
+
+This is not hypothetical. In the first real workbook, **animal 461672's
+`SpVB TMX` column was a byte-for-byte copy of its `SpVB pre` column**, all 1173
+samples. Nothing else caught it: both columns were fully numeric and the right
+length, the animal appeared correctly in both conditions, and the two identical
+PSD curves overplotted into what looked like a single condition on screen. Its
+contribution to the paired test was a change of exactly zero, which drags the
+estimated effect toward "no effect" while still counting toward n.
+
+If you see this error, fix the workbook. No statistical handling repairs a column
+that was never recorded.
+
+## Trace variability (SD after normalisation)
+
+`trace_stats.csv` has one row per animal per condition. It reports **two**
+standard deviations, because "SD after normalisation" has two answers and they
+are not the same number:
+
+| column | what it is |
+| --- | --- |
+| `sd_normalized` | SD straight after normalisation, **before** the high-pass filter and detrend. Slow drift included. Usually what "how much did the vessel fluctuate" means. |
+| `sd_analyzed` | SD of the trace the PSD was actually computed from, after high-pass and detrend. Always the smaller of the two. |
+| `mean_raw`, `sd_raw` | The absolute scale, before normalisation — what dx/x₀ divided out. |
+| `n_samples`, `duration_sec` | After trimming. |
+
+Use `sd_normalized` for reporting variability. The gap between the two depends
+entirely on your high-pass cutoff: at the default 0.005 Hz it is small (about
+1.2× on our sample workbook), but a higher cutoff widens it sharply.
+
+Two traps:
+
+- **Units follow the Area/Diameter setting.** With Area selected the tool takes
+  the square root first, so `mean_raw` and `sd_raw` are in **diameter** units,
+  not area, and both SDs describe a normalised diameter trace.
+- **With z-score normalisation, `sd_normalized` is 1.0 for every trace** by
+  definition, so it tells you nothing. The app says so on screen. Use `sd_raw`,
+  or switch to dx/x₀.
+
+`sd_analyzed` is close to total band power by construction (for a mean-zero
+trace, variance is the integral of the PSD — measured agreement on our sample
+workbook was about 0.94), so treat it as a check on the PSD rather than as an
+independent measure.
 
 ## parameters.json
 
@@ -75,11 +213,24 @@ docker run -p 8080:8080 vasomotion-psd
 # then open http://localhost:8080
 ```
 
+## Log or linear frequency axis?
+
+Depends what you are showing, so the control applies to every figure — group
+average, per-animal small multiples and the method comparison.
+
+- **Log** for inspecting low frequencies and 1/f slope. This is the default and
+  the right choice most of the time.
+- **Linear** to highlight a sharp, discrete peak in a narrow window (say
+  0–0.1 Hz), where a log axis compresses the peak into the left margin.
+
+If you are sending figures to someone who will pick one, export both.
+
 ## Known gaps
 
 - The compare-methods figure and its table can show different method sets.
-- The log/linear axis control applies to the group-average figure only.
 - Figures download via **Download Everything** rather than individually.
+- The between-region comparison needs exactly two regions; with three or more,
+  which pair to compare is your call, so the table is left empty.
 
 Uploaded data is not stored. There is no login and no database; close the tab
 and it is gone.

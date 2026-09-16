@@ -11,6 +11,7 @@ import pytest
 from vasomotion_app.io_excel import (
     NonNumericDataError,
     check_animal_pairing,
+    check_duplicate_traces,
     detect_sheet_structure,
     load_workbook_long,
     parse_sheet_name,
@@ -445,3 +446,136 @@ def test_load_workbook_long_rejects_summary_label_variants(tmp_path):
 
         with pytest.raises(NonNumericDataError):
             load_workbook_long(str(path))
+
+
+# --------------------------------------------------------------------------
+# check_duplicate_traces
+# --------------------------------------------------------------------------
+
+def _traces_long_df(rows):
+    """rows: (animal, region, condition, [values...])"""
+    out = []
+    for animal, region, condition, values in rows:
+        for i, v in enumerate(values, start=1):
+            out.append(
+                {
+                    "animal": animal, "sex": "M", "region": region,
+                    "condition": condition, "sample": i, "value": float(v),
+                }
+            )
+    return pd.DataFrame(out, columns=["animal", "sex", "region", "condition", "sample", "value"])
+
+
+def test_check_duplicate_traces_finds_nothing_in_clean_data():
+    df = _traces_long_df([
+        (1, "R1", "pre", [1.0, 2.0, 3.0]),
+        (1, "R1", "TMX", [1.0, 2.0, 3.1]),
+        (2, "R1", "pre", [4.0, 5.0, 6.0]),
+        (2, "R1", "TMX", [4.0, 5.0, 6.1]),
+    ])
+    result = check_duplicate_traces(df)
+    assert result["duplicates"] == []
+    assert result["warnings"] == []
+
+
+def test_check_duplicate_traces_flags_one_animal_identical_across_conditions():
+    """The animal 461672 defect: a copy-pasted column leaves the animal
+    correctly present in both conditions, fully numeric and the right
+    length, so nothing else in the loader objects to it."""
+    df = _traces_long_df([
+        (1, "R1", "pre", [1.0, 2.0, 3.0]),
+        (1, "R1", "TMX", [1.0, 2.0, 3.0]),
+        (2, "R1", "pre", [4.0, 5.0, 6.0]),
+        (2, "R1", "TMX", [7.0, 8.0, 9.0]),
+    ])
+    result = check_duplicate_traces(df)
+    assert len(result["duplicates"]) == 1
+    dup = result["duplicates"][0]
+    assert dup["kind"] == "within_animal"
+    assert dup["n_samples"] == 3
+    assert dup["region"] == "R1"
+    warning = result["warnings"][0]
+    assert "identical values in all 3 samples" in warning
+    assert "animal 1" in warning
+    assert "biases any paired statistic toward no effect" in warning
+
+
+def test_check_duplicate_traces_flags_two_animals_sharing_a_column():
+    df = _traces_long_df([
+        (1, "R1", "pre", [1.0, 2.0, 3.0]),
+        (2, "R1", "pre", [1.0, 2.0, 3.0]),
+        (1, "R1", "TMX", [4.0, 5.0, 6.0]),
+        (2, "R1", "TMX", [7.0, 8.0, 9.0]),
+    ])
+    result = check_duplicate_traces(df)
+    assert len(result["duplicates"]) == 1
+    assert result["duplicates"][0]["kind"] == "across_animals"
+    assert "inflates n without adding information" in result["warnings"][0]
+
+
+def test_check_duplicate_traces_ignores_traces_that_differ_in_one_sample():
+    """Exact equality is the test, with no tolerance -- near-identical
+    traces are a legitimate result, bit-identical ones are not obtainable
+    from two measurements."""
+    df = _traces_long_df([
+        (1, "R1", "pre", [1.0, 2.0, 3.0]),
+        (1, "R1", "TMX", [1.0, 2.0, 3.0000001]),
+    ])
+    assert check_duplicate_traces(df)["duplicates"] == []
+
+
+def test_check_duplicate_traces_ignores_traces_of_different_lengths():
+    df = _traces_long_df([
+        (1, "R1", "pre", [1.0, 2.0, 3.0]),
+        (1, "R1", "TMX", [1.0, 2.0, 3.0, 4.0]),
+    ])
+    assert check_duplicate_traces(df)["duplicates"] == []
+
+
+def test_check_duplicate_traces_handles_an_empty_frame():
+    empty = pd.DataFrame(
+        columns=["animal", "sex", "region", "condition", "sample", "value"]
+    )
+    result = check_duplicate_traces(empty)
+    assert result["duplicates"] == [] and result["warnings"] == []
+
+
+def test_check_duplicate_traces_reports_every_pair_in_a_triple():
+    df = _traces_long_df([
+        (1, "R1", "pre", [1.0, 2.0]),
+        (1, "R1", "TMX", [1.0, 2.0]),
+        (2, "R1", "pre", [1.0, 2.0]),
+    ])
+    # 3 mutually identical traces -> 3 pairs.
+    assert len(check_duplicate_traces(df)["duplicates"]) == 3
+
+
+@pytest.mark.skipif(
+    not REAL_WORKBOOK.exists(), reason="real sample workbook not present in this checkout"
+)
+def test_check_duplicate_traces_catches_the_real_461672_defect():
+    """Regression lock on the actual defect this check was written for: in
+    the submitted workbook, animal 461672's 'SpVB TMX' column is a
+    byte-for-byte copy of its 'SpVB pre' column across all 1173 samples, and
+    it is the ONLY such pair in the file."""
+    df = load_workbook_long(str(REAL_WORKBOOK))
+    result = check_duplicate_traces(df)
+    assert len(result["duplicates"]) == 1
+    dup = result["duplicates"][0]
+    assert dup["kind"] == "within_animal"
+    assert dup["region"] == "SpVB"
+    assert dup["n_samples"] == 1173
+    assert "461672" in dup["a"] and "461672" in dup["b"]
+
+
+@pytest.mark.skipif(
+    not REAL_WORKBOOK.exists(), reason="real sample workbook not present in this checkout"
+)
+def test_check_animal_pairing_calls_the_duplicated_animal_perfectly_paired():
+    """Why check_duplicate_traces has to exist as a separate check: the
+    pairing check sees animal 461672 in both conditions and reports the
+    region as fully paired with no warning at all."""
+    df = load_workbook_long(str(REAL_WORKBOOK))
+    pairing = check_animal_pairing(df)
+    assert pairing["n_paired_per_region"]["SpVB"] == 6
+    assert pairing["warnings"] == []
