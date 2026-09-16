@@ -6,12 +6,15 @@ import pandas as pd
 import pytest
 
 from vasomotion_app.preprocess import (
+    TRACE_STATS_COLUMNS,
     area_to_diameter,
     detrend_signal,
     highpass_filter,
     normalize_signal,
     preprocess_long_dataframe,
     preprocess_signal,
+    preprocess_stages,
+    trace_stats_table,
     trace_summary,
     trim_signal,
     validate_sampling_rate,
@@ -270,3 +273,133 @@ def test_preprocess_long_dataframe_normalize_per_group():
     animal2 = result[result["animal"] == 2]["value"].to_numpy()
     assert np.allclose(animal1, [-0.2, 0.0, 0.2])
     assert np.allclose(animal2, [-0.2, 0.0, 0.2])
+
+
+# --- preprocess_stages / trace_stats_table -------------------------------
+#
+# These back the exported trace_stats.csv, whose whole purpose is to let a
+# user compute variability outside the app. The risk they guard is a table
+# of plausible-looking numbers that describe a different chain than the PSD
+# did, so every test below pins a stage to an independently-known value
+# rather than to whatever the function happens to return.
+
+
+def _stats_long_df(values_by_animal: dict[int, list[float]]) -> pd.DataFrame:
+    rows = []
+    for animal, values in values_by_animal.items():
+        for i, value in enumerate(values, start=1):
+            rows.append(
+                {
+                    "animal": animal, "sex": "M", "region": "R", "condition": "C",
+                    "sample": i, "value": float(value),
+                }
+            )
+    return pd.DataFrame(rows)
+
+
+def test_preprocess_stages_analyzed_is_exactly_preprocess_signal():
+    # The reason preprocess_signal delegates to preprocess_stages instead of
+    # repeating the chain: if these two ever diverge, trace_stats.csv would
+    # describe a trace the PSD never saw.
+    rng = np.random.default_rng(0)
+    values = 100.0 + rng.standard_normal(400) * 5.0
+    kwargs = dict(
+        fs=2.0, signal_type="diameter", normalize="dx_x0_median",
+        detrend_method="linear", highpass_cutoff=0.02, highpass_order=4,
+        trim_seconds=1.0,
+    )
+    stages = preprocess_stages(values, **kwargs)
+    assert np.array_equal(stages["analyzed"], preprocess_signal(values, **kwargs))
+
+
+def test_preprocess_stages_reports_each_step_separately():
+    # Area 400 -> diameter 20 by sqrt, and the conversion must land in
+    # 'converted', not be folded into 'trimmed'.
+    values = np.full(50, 400.0)
+    stages = preprocess_stages(
+        values, fs=1.0, signal_type="area", normalize="none",
+        detrend_method="none", highpass_cutoff=None, highpass_order=4,
+        trim_seconds=10.0,
+    )
+    assert len(stages["trimmed"]) == 40
+    assert np.allclose(stages["trimmed"], 400.0)
+    assert np.allclose(stages["converted"], 20.0)
+
+
+def test_trace_stats_table_columns_and_one_row_per_group():
+    df = _stats_long_df({1: [90.0, 100.0, 110.0], 2: [190.0, 200.0, 210.0]})
+    stats = trace_stats_table(
+        df, fs=1.0, signal_type="diameter", normalize="dx_x0_median",
+        detrend_method="none", highpass_cutoff=None, highpass_order=4,
+        trim_seconds=0.0,
+    )
+    assert list(stats.columns) == TRACE_STATS_COLUMNS
+    assert len(stats) == 2
+    assert stats["n_samples"].tolist() == [3, 3]
+
+
+def test_trace_stats_mean_raw_is_post_conversion_not_raw_area():
+    # signal_type='area' means mean_raw is in DIAMETER units. Reporting the
+    # raw area mean (400) here would silently mislabel the column's units.
+    df = _stats_long_df({1: [400.0] * 20})
+    stats = trace_stats_table(
+        df, fs=1.0, signal_type="area", normalize="none",
+        detrend_method="none", highpass_cutoff=None, highpass_order=4,
+        trim_seconds=0.0,
+    )
+    assert stats.iloc[0]["mean_raw"] == pytest.approx(20.0)
+    assert stats.iloc[0]["sd_raw"] == pytest.approx(0.0)
+
+
+def test_trace_stats_sd_normalized_is_before_highpass_and_detrend():
+    # The distinction the two SD columns exist to make. A slow ramp plus a
+    # fast wiggle: sd_normalized keeps the ramp's variance, sd_analyzed has
+    # had it filtered and detrended away, so sd_analyzed must be clearly
+    # smaller. If both columns reported the same stage this would fail.
+    fs = 2.0
+    t = np.arange(0, 600, 1 / fs)
+    values = 100.0 + 20.0 * (t / t[-1]) + 0.5 * np.sin(2 * np.pi * 0.1 * t)
+    df = _stats_long_df({1: values.tolist()})
+    stats = trace_stats_table(
+        df, fs=fs, signal_type="diameter", normalize="dx_x0_median",
+        detrend_method="linear", highpass_cutoff=0.02, highpass_order=4,
+        trim_seconds=0.0,
+    )
+    row = stats.iloc[0]
+    assert row["sd_normalized"] > row["sd_analyzed"] * 5
+    # And sd_normalized really is the normalised trace's own SD, computed
+    # independently of trace_stats_table's internals.
+    expected = np.std(
+        preprocess_stages(
+            values, fs=fs, signal_type="diameter", normalize="dx_x0_median",
+            detrend_method="linear", highpass_cutoff=0.02, highpass_order=4,
+            trim_seconds=0.0,
+        )["normalized"],
+        ddof=1,
+    )
+    assert row["sd_normalized"] == pytest.approx(expected)
+
+
+def test_trace_stats_sd_normalized_is_one_under_zscore():
+    # Degenerate by construction -- the app warns about it, so the value
+    # itself must actually be 1.0 rather than something near it.
+    rng = np.random.default_rng(1)
+    df = _stats_long_df({1: (100.0 + rng.standard_normal(300) * 3.0).tolist()})
+    stats = trace_stats_table(
+        df, fs=1.0, signal_type="diameter", normalize="zscore",
+        detrend_method="none", highpass_cutoff=None, highpass_order=4,
+        trim_seconds=0.0,
+    )
+    assert stats.iloc[0]["sd_normalized"] == pytest.approx(1.0)
+
+
+def test_trace_stats_respects_trim_in_n_samples_and_duration():
+    df = _stats_long_df({1: np.linspace(90.0, 110.0, 100).tolist()})
+    stats = trace_stats_table(
+        df, fs=2.0, signal_type="diameter", normalize="none",
+        detrend_method="none", highpass_cutoff=None, highpass_order=4,
+        trim_seconds=10.0,
+    )
+    row = stats.iloc[0]
+    assert row["n_samples"] == 80
+    assert row["duration_sec"] == pytest.approx(40.0)

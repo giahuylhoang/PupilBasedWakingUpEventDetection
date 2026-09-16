@@ -116,6 +116,39 @@ def validate_highpass_cutoff(cutoff_hz: float | None, fs: float) -> str | None:
     return None
 
 
+def preprocess_stages(
+    values: np.ndarray,
+    fs: float,
+    signal_type: str,
+    normalize: str = "dx_x0_median",
+    detrend_method: str = "linear",
+    highpass_cutoff: float | None = 0.005,
+    highpass_order: int = 4,
+    trim_seconds: float = 0.0,
+) -> dict[str, np.ndarray]:
+    """Every intermediate trace of the Stage 1 chain, keyed by stage name:
+    'trimmed', 'converted', 'normalized', 'filtered', 'analyzed'.
+
+    This is the single definition of the stage order -- `preprocess_signal`
+    returns this dict's 'analyzed' entry rather than repeating the chain, so
+    a caller wanting a statistic from a mid-chain trace (see
+    `trace_stats_table`) can never drift out of step with what the PSD was
+    actually computed from.
+    """
+    trimmed = trim_signal(values, fs, trim_seconds)
+    converted = area_to_diameter(trimmed, signal_type)
+    normalized = normalize_signal(converted, normalize)
+    filtered = highpass_filter(normalized, fs, highpass_cutoff, highpass_order)
+    analyzed = detrend_signal(filtered, detrend_method)
+    return {
+        "trimmed": trimmed,
+        "converted": converted,
+        "normalized": normalized,
+        "filtered": filtered,
+        "analyzed": analyzed,
+    }
+
+
 def preprocess_signal(
     values: np.ndarray,
     fs: float,
@@ -128,12 +161,11 @@ def preprocess_signal(
 ) -> np.ndarray:
     """Apply the full Stage 1 pipeline to one animal's raw trace, in order:
     trim, signal-type conversion, normalise, high-pass, detrend."""
-    x = trim_signal(values, fs, trim_seconds)
-    x = area_to_diameter(x, signal_type)
-    x = normalize_signal(x, normalize)
-    x = highpass_filter(x, fs, highpass_cutoff, highpass_order)
-    x = detrend_signal(x, detrend_method)
-    return x
+    return preprocess_stages(
+        values, fs=fs, signal_type=signal_type, normalize=normalize,
+        detrend_method=detrend_method, highpass_cutoff=highpass_cutoff,
+        highpass_order=highpass_order, trim_seconds=trim_seconds,
+    )["analyzed"]
 
 
 def trace_summary(n_samples: int, fs: float) -> dict:
@@ -217,3 +249,96 @@ def preprocess_long_dataframe(
     return pd.DataFrame(
         out_rows, columns=["animal", "sex", "region", "condition", "sample", "value"]
     )
+
+
+# Column order of trace_stats_table's output. Kept as a module constant so a
+# test can assert the exported table's shape without restating the list.
+TRACE_STATS_COLUMNS = [
+    "animal", "sex", "region", "condition",
+    "n_samples", "duration_sec",
+    "mean_raw", "sd_raw", "sd_normalized", "sd_analyzed",
+]
+
+
+def trace_stats_table(
+    df: pd.DataFrame,
+    fs: float,
+    signal_type: str,
+    normalize: str = "dx_x0_median",
+    detrend_method: str = "linear",
+    highpass_cutoff: float | None = 0.005,
+    highpass_order: int = 4,
+    trim_seconds: float = 0.0,
+) -> pd.DataFrame:
+    """Per-trace amplitude statistics, one row per (animal, sex, region,
+    condition) group, for export alongside the PSD and band tables.
+
+    Every value comes from `preprocess_stages` under the same settings the
+    PSD run used, so these numbers describe exactly the traces that produced
+    the spectra -- not a separately recomputed chain.
+
+    Two different standard deviations are reported, because "SD after
+    normalisation" is ambiguous and the two answers differ substantially:
+
+      sd_normalized  SD straight after the normalise step, BEFORE the
+                     high-pass filter and detrend. This is the variability
+                     of the normalised trace as recorded, slow drift
+                     included -- usually what is meant by "how much did the
+                     vessel fluctuate".
+      sd_analyzed    SD of the trace the PSD was actually computed from,
+                     i.e. after high-pass and detrend. Always the smaller of
+                     the two, by however much those two steps removed: on
+                     the real sample workbook at the default 0.005 Hz
+                     cutoff the gap is modest (median ratio ~1.2x, because
+                     a 0.005 Hz high-pass discards very little), but a
+                     higher cutoff widens it sharply. It is also
+                     near-redundant with total band power: for a mean-zero
+                     trace, variance is the integral of the PSD (measured
+                     agreement on that workbook: integral / sd_analyzed^2
+                     ~= 0.94, the residual being the taper and
+                     segment-averaging normalisation of the estimator
+                     rather than a discrepancy in either number).
+
+    Caveats worth knowing before these columns go into a statistics package:
+
+    * Units follow `signal_type`. With signal_type='area' the chain converts
+      to diameter (square root) BEFORE normalising, so `mean_raw`/`sd_raw`
+      are in diameter units, not area, and the SD columns describe a
+      normalised diameter trace. With 'diameter' no conversion happens.
+    * `mean_raw`/`sd_raw` are taken after trim and conversion but before
+      normalisation, so they carry the absolute scale that the
+      dimensionless dx/x0 columns divided out.
+    * With normalize='zscore', `sd_normalized` is 1.0 by construction (the
+      z-score sets it), so it carries no information about that trace.
+    * All SDs use ddof=1 (sample SD), matching normalize_signal's z-score.
+    """
+    out_rows = []
+    group_cols = ["animal", "sex", "region", "condition"]
+    for keys, group in df.sort_values("sample").groupby(group_cols, sort=False):
+        animal, sex, region, condition = keys
+        stages = preprocess_stages(
+            group["value"].to_numpy(),
+            fs=fs,
+            signal_type=signal_type,
+            normalize=normalize,
+            detrend_method=detrend_method,
+            highpass_cutoff=highpass_cutoff,
+            highpass_order=highpass_order,
+            trim_seconds=trim_seconds,
+        )
+        converted = stages["converted"]
+        out_rows.append(
+            {
+                "animal": animal,
+                "sex": sex,
+                "region": region,
+                "condition": condition,
+                "n_samples": int(len(converted)),
+                "duration_sec": float(len(converted) / fs),
+                "mean_raw": float(np.mean(converted)),
+                "sd_raw": float(np.std(converted, ddof=1)),
+                "sd_normalized": float(np.std(stages["normalized"], ddof=1)),
+                "sd_analyzed": float(np.std(stages["analyzed"], ddof=1)),
+            }
+        )
+    return pd.DataFrame(out_rows, columns=TRACE_STATS_COLUMNS)
