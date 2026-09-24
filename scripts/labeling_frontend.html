@@ -1,0 +1,315 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8"/>
+<title>Sleep-state labeling — Awake / NREM / REM</title>
+<style>
+  :root{
+    --bg:#0f1115; --panel:#181b22; --ink:#e8eaed; --muted:#9aa0aa;
+    --line:#2a2f3a; --accent:#4da3ff;
+    --awake:#f2c14e; --nrem:#5b8def; --rem:#e0607e; --unclear:#7a7f8a;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;font:14px/1.4 -apple-system,Segoe UI,Roboto,sans-serif;
+       background:var(--bg);color:var(--ink)}
+  header{display:flex;gap:14px;align-items:center;padding:10px 16px;
+         background:var(--panel);border-bottom:1px solid var(--line);
+         position:sticky;top:0;z-index:10;flex-wrap:wrap}
+  header h1{font-size:15px;margin:0;font-weight:600}
+  header .sp{flex:1}
+  input,select,button{font:inherit;color:var(--ink);background:#222732;
+        border:1px solid var(--line);border-radius:6px;padding:5px 9px}
+  button{cursor:pointer}
+  button:hover{border-color:var(--accent)}
+  .layout{display:flex;height:calc(100vh - 53px)}
+  aside{width:300px;min-width:300px;background:var(--panel);
+        border-right:1px solid var(--line);overflow:auto}
+  aside h2{font-size:12px;text-transform:uppercase;letter-spacing:.5px;
+           color:var(--muted);margin:14px 12px 6px}
+  .cyc{padding:7px 12px;border-bottom:1px solid var(--line);cursor:pointer;
+       display:flex;justify-content:space-between;gap:8px}
+  .cyc:hover{background:#1e222b}
+  .cyc.active{background:#243047;border-left:3px solid var(--accent)}
+  .cyc .meta{font-size:11px;color:var(--muted)}
+  .cyc .badge{font-size:11px;color:var(--muted);white-space:nowrap}
+  main{flex:1;display:flex;flex-direction:column;overflow:hidden}
+  .topbar{padding:8px 16px;border-bottom:1px solid var(--line);
+          display:flex;gap:16px;align-items:center;flex-wrap:wrap}
+  .pill{padding:3px 9px;border-radius:20px;background:#222732;font-size:12px}
+  .pill b{color:var(--accent)}
+  #plots{flex:1;overflow:auto;padding:8px 12px}
+  .plotrow{margin-bottom:6px}
+  .plotrow .lbl{font-size:11px;color:var(--muted);margin:0 0 1px 4px}
+  canvas{display:block;width:100%;background:#12151c;border:1px solid var(--line);
+         border-radius:6px}
+  .footer{border-top:1px solid var(--line);padding:10px 16px;background:var(--panel);
+          display:flex;gap:10px;align-items:center;flex-wrap:wrap}
+  .btn-lab{font-weight:600;border-width:2px}
+  .btn-awake{border-color:var(--awake)} .btn-awake.sel{background:var(--awake);color:#000}
+  .btn-nrem{border-color:var(--nrem)}  .btn-nrem.sel{background:var(--nrem);color:#000}
+  .btn-rem{border-color:var(--rem)}    .btn-rem.sel{background:var(--rem);color:#000}
+  .btn-unclear{border-color:var(--unclear)} .btn-unclear.sel{background:var(--unclear);color:#000}
+  .seg-nav{display:flex;gap:6px;align-items:center}
+  .hint{font-size:11px;color:var(--muted)}
+  .strip{height:26px;width:100%;border:1px solid var(--line);border-radius:6px;
+         background:#12151c;margin-top:2px}
+  .saved{color:#6fcf7f;font-size:12px}
+  a.dl{color:var(--accent);text-decoration:none}
+</style>
+</head>
+<body>
+<header>
+  <h1>Sleep-state labeling</h1>
+  <span class="hint">Awake / NREM / REM &mdash; 5&nbsp;s segments</span>
+  <span class="sp"></span>
+  <label class="hint">Annotator</label>
+  <input id="annotator" placeholder="your name" style="width:140px"/>
+  <button id="reload">Load cycles</button>
+  <a class="hint" href="/logout" style="color:#9aa0aa;text-decoration:none;margin-left:4px">Sign out</a>
+</header>
+
+<div class="layout">
+  <aside id="sidebar"><h2>Cycles</h2><div id="cyclist"></div></aside>
+
+  <main>
+    <div class="topbar">
+      <span class="pill">Cycle: <b id="curKey">—</b></span>
+      <span class="pill">Cohort <b id="curCohort">—</b></span>
+      <span class="pill">Date <b id="curDate">—</b></span>
+      <span class="pill">Segment <b id="curSeg">—</b> / <span id="nSeg">—</span></span>
+      <span class="pill">Window <b id="curWin">—</b></span>
+      <span class="sp" style="flex:1"></span>
+      <label class="hint"><input type="checkbox" id="wholeView"/> View entire recording</label>
+      <span id="savedMsg" class="saved"></span>
+    </div>
+
+    <div id="plots"></div>
+
+    <div class="footer">
+      <div class="seg-nav">
+        <button id="prev">&larr; Prev (J)</button>
+        <button id="next">Next (L) &rarr;</button>
+      </div>
+      <span style="width:14px"></span>
+      <button class="btn-lab btn-awake"  data-lab="Awake">Awake (1)</button>
+      <button class="btn-lab btn-nrem"   data-lab="NREM">NREM (2)</button>
+      <button class="btn-lab btn-rem"    data-lab="REM">REM (3)</button>
+      <button class="btn-lab btn-unclear" data-lab="Unclear">Unclear (4)</button>
+      <span class="sp" style="flex:1"></span>
+      <span id="progress" class="hint"></span>
+      <button id="save" title="Auto-saves continuously; click to force a save now">Save now</button>
+      <a id="download" class="dl" href="#" style="display:none">Download CSV</a>
+    </div>
+    <div style="padding:0 12px 10px">
+      <div class="hint">Segment timeline (color = label; outline = current)</div>
+      <canvas id="strip" class="strip" height="26"></canvas>
+    </div>
+  </main>
+</div>
+
+<script>
+const LAB_COLORS = {Awake:'#f2c14e',NREM:'#5b8def',REM:'#e0607e',Unclear:'#7a7f8a','':'#2a2f3a'};
+let cycles=[], cur=null, curData=null, curBin=0, labels={}, whole=false;
+
+const $ = s => document.querySelector(s);
+const api = (u,o) => fetch(u,o).then(r=>{
+  if(r.status===401){ location.href='/login'; throw new Error('auth'); }
+  return r.json();
+});
+const annot = () => ($('#annotator').value||'anon').trim();
+
+async function loadCycles(){
+  cycles = await api('/api/cycles?annotator='+encodeURIComponent(annot()));
+  const box = $('#cyclist'); box.innerHTML='';
+  let lastCohort=null;
+  cycles.forEach(c=>{
+    if(c.cohort!==lastCohort){ lastCohort=c.cohort;
+      const h=document.createElement('h2'); h.textContent=c.cohort||'(unknown)'; box.appendChild(h); }
+    const d=document.createElement('div'); d.className='cyc'; d.dataset.key=c.key;
+    d.innerHTML=`<div><div>cycle ${c.cycle||'?'} <span class="meta">${c.date||''}</span></div>
+      <div class="meta">${c.group||''}</div></div>
+      <div class="badge">${c.labeled? c.labeled+' ✓':''}</div>`;
+    d.onclick=()=>openCycle(c.key);
+    box.appendChild(d);
+  });
+}
+
+async function openCycle(key){
+  if(cur && dirty) await save(false);   // flush pending edits before switching
+  cur=key; curBin=0;
+  document.querySelectorAll('.cyc').forEach(e=>e.classList.toggle('active',e.dataset.key===key));
+  curData = await api('/api/cycle/'+encodeURIComponent(key));
+  const lr = await api('/api/labels?annotator='+encodeURIComponent(annot())+'&key='+encodeURIComponent(key));
+  labels = lr.labels||{};
+  $('#curKey').textContent=key;
+  $('#curCohort').textContent=curData.info.cohort||'—';
+  $('#curDate').textContent=curData.info.date||'—';
+  $('#nSeg').textContent=curData.bins.length;
+  buildPlots();
+  render();
+}
+
+// ---- plotting (canvas, no libs) ---------------------------------------- //
+let canvases=[];
+function buildPlots(){
+  const box=$('#plots'); box.innerHTML=''; canvases=[];
+  curData.traces.forEach(tr=>{
+    const row=document.createElement('div'); row.className='plotrow';
+    const lbl=document.createElement('div'); lbl.className='lbl'; lbl.textContent=tr.label;
+    const cv=document.createElement('canvas'); cv.height=90;
+    row.appendChild(lbl); row.appendChild(cv); box.appendChild(row);
+    canvases.push({cv,tr});
+  });
+}
+
+function visibleWindow(){
+  const b=curData.bins[curBin]||{t_start:0,t_end:curData.bin_sec};
+  if(whole) return [0, curData.duration];
+  const pad=(b.t_end-b.t_start)*3;           // show segment + context
+  return [Math.max(0,b.t_start-pad), Math.min(curData.duration,b.t_end+pad)];
+}
+
+function drawTrace(c,xlo,xhi){
+  const cv=c.cv, dpr=window.devicePixelRatio||1;
+  const w=cv.clientWidth, h=cv.clientHeight;
+  cv.width=w*dpr; cv.height=h*dpr;
+  const g=cv.getContext('2d'); g.scale(dpr,dpr);
+  g.clearRect(0,0,w,h);
+  const t=c.tr.t, y=c.tr.y;
+  // y-range over visible window
+  let ymin=Infinity,ymax=-Infinity;
+  for(let i=0;i<t.length;i++){ if(t[i]<xlo||t[i]>xhi) continue;
+    const v=y[i]; if(v==null||!isFinite(v)) continue;
+    if(v<ymin)ymin=v; if(v>ymax)ymax=v; }
+  if(!isFinite(ymin)){ymin=0;ymax=1;}
+  if(ymin===ymax){ymin-=1;ymax+=1;}
+  const X=tt=>(tt-xlo)/(xhi-xlo)*w;
+  const Y=v=>h-6-((v-ymin)/(ymax-ymin))*(h-12);
+  // current-segment highlight
+  const b=curData.bins[curBin];
+  if(b){ g.fillStyle='rgba(77,163,255,.13)';
+    g.fillRect(X(b.t_start),0,Math.max(2,X(b.t_end)-X(b.t_start)),h); }
+  // label shading for all bins (faint)
+  curData.bins.forEach(bn=>{
+    const lab=labels[bn.bin]; if(!lab) return;
+    g.fillStyle=hexA(LAB_COLORS[lab],.10);
+    g.fillRect(X(bn.t_start),0,Math.max(1,X(bn.t_end)-X(bn.t_start)),h);
+  });
+  // trace
+  g.strokeStyle='#9fd0ff'; g.lineWidth=1; g.beginPath();
+  let pen=false;
+  for(let i=0;i<t.length;i++){ if(t[i]<xlo||t[i]>xhi){pen=false;continue;}
+    const v=y[i]; if(v==null||!isFinite(v)){pen=false;continue;}
+    const px=X(t[i]),py=Y(v);
+    if(!pen){g.moveTo(px,py);pen=true;}else g.lineTo(px,py);
+  }
+  g.stroke();
+}
+function hexA(hex,a){const n=parseInt(hex.slice(1),16);
+  return `rgba(${(n>>16)&255},${(n>>8)&255},${n&255},${a})`;}
+
+function redrawAll(){const [lo,hi]=visibleWindow();canvases.forEach(c=>drawTrace(c,lo,hi));drawStrip();}
+
+function drawStrip(){
+  const cv=$('#strip'),dpr=window.devicePixelRatio||1,w=cv.clientWidth,h=26;
+  cv.width=w*dpr;cv.height=h*dpr;const g=cv.getContext('2d');g.scale(dpr,dpr);
+  g.clearRect(0,0,w,h);
+  const n=curData.bins.length;
+  curData.bins.forEach((bn,i)=>{
+    const x=i/n*w, bw=Math.max(1,w/n-0.5);
+    g.fillStyle=LAB_COLORS[labels[bn.bin]||''];
+    g.fillRect(x,4,bw,h-8);
+    if(i===curBin){g.strokeStyle='#fff';g.lineWidth=2;g.strokeRect(x,3,bw,h-6);}
+  });
+  cv.onclick=e=>{const r=cv.getBoundingClientRect();
+    curBin=Math.min(n-1,Math.max(0,Math.floor((e.clientX-r.left)/r.width*n)));render();};
+}
+
+function render(){
+  const b=curData.bins[curBin];
+  $('#curSeg').textContent=curBin+1;
+  $('#curWin').textContent=b?`${b.t_start.toFixed(0)}–${b.t_end.toFixed(0)} s`:'—';
+  document.querySelectorAll('.btn-lab').forEach(btn=>
+    btn.classList.toggle('sel', b && labels[b.bin]===btn.dataset.lab));
+  const done=Object.values(labels).filter(Boolean).length;
+  $('#progress').textContent=`${done}/${curData.bins.length} labeled`;
+  redrawAll();
+}
+
+function setLabel(lab){
+  const b=curData.bins[curBin]; if(!b) return;
+  labels[b.bin]= labels[b.bin]===lab ? '' : lab;
+  if(labels[b.bin] && curBin<curData.bins.length-1) curBin++;  // auto-advance
+  render();
+  autoSave();                                                  // persist on every change
+}
+function step(d){curBin=Math.min(curData.bins.length-1,Math.max(0,curBin+d));render();}
+
+// ---- auto-save (debounced) --------------------------------------------- //
+let saveTimer=null, saving=false, dirty=false;
+function autoSave(){
+  dirty=true;
+  $('#savedMsg').textContent='editing…'; $('#savedMsg').style.color='#9aa0aa';
+  clearTimeout(saveTimer);
+  saveTimer=setTimeout(()=>save(false), 800);   // save 0.8 s after you stop clicking
+}
+
+async function save(explicit=true){
+  if(!cur || !curData) return;
+  if(saving){ dirty=true; return; }             // coalesce concurrent saves
+  saving=true; dirty=false;
+  const bins={}; curData.bins.forEach(b=>bins[b.bin]={t_start:b.t_start,t_end:b.t_end});
+  try{
+    const r=await api('/api/labels',{method:'POST',headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({annotator:annot(),key:cur,labels:filterLabels(),bins})});
+    $('#savedMsg').textContent = (explicit?'saved ✓ → ':'auto-saved ✓ ')+(explicit?r.path:'');
+    $('#savedMsg').style.color='#6fcf7f';
+    const c=cycles.find(c=>c.key===cur); if(c){c.labeled=r.saved;}
+    const el=document.querySelector(`.cyc[data-key="${cur}"] .badge`); if(el) el.textContent=r.saved?r.saved+' ✓':'';
+    buildDownload();
+  }catch(e){
+    $('#savedMsg').textContent='⚠ save failed — retrying'; $('#savedMsg').style.color='#e0607e';
+    dirty=true; clearTimeout(saveTimer); saveTimer=setTimeout(()=>save(false),2000);
+  }finally{
+    saving=false;
+    if(dirty){ clearTimeout(saveTimer); saveTimer=setTimeout(()=>save(false),300); }
+  }
+}
+function filterLabels(){const o={};for(const k in labels) if(labels[k]) o[k]=labels[k];return o;}
+function buildDownload(){
+  let csv='key,bin,t_start,t_end,label\n';
+  curData.bins.forEach(b=>{const l=labels[b.bin]; if(l) csv+=`${cur},${b.bin},${b.t_start},${b.t_end},${l}\n`;});
+  const blob=new Blob([csv],{type:'text/csv'});
+  const a=$('#download'); a.href=URL.createObjectURL(blob); a.download=cur+'_labels.csv'; a.style.display='inline';
+}
+
+// ---- events ------------------------------------------------------------- //
+$('#reload').onclick=loadCycles;
+$('#prev').onclick=()=>step(-1);
+$('#next').onclick=()=>step(1);
+$('#save').onclick=save;
+$('#wholeView').onchange=e=>{whole=e.target.checked;redrawAll();};
+document.querySelectorAll('.btn-lab').forEach(b=>b.onclick=()=>setLabel(b.dataset.lab));
+window.addEventListener('resize',()=>{if(curData)redrawAll();});
+// flush unsaved edits if the tab is closed/hidden (sendBeacon survives unload)
+function flushBeacon(){
+  if(!cur || !curData || !dirty) return;
+  const bins={}; curData.bins.forEach(b=>bins[b.bin]={t_start:b.t_start,t_end:b.t_end});
+  const blob=new Blob([JSON.stringify({annotator:annot(),key:cur,labels:filterLabels(),bins})],
+                      {type:'application/json'});
+  navigator.sendBeacon('/api/labels', blob);
+}
+window.addEventListener('pagehide', flushBeacon);
+document.addEventListener('visibilitychange',()=>{ if(document.visibilityState==='hidden') flushBeacon(); });
+window.addEventListener('keydown',e=>{
+  if(e.target.tagName==='INPUT') return;
+  if(e.key==='1')setLabel('Awake'); else if(e.key==='2')setLabel('NREM');
+  else if(e.key==='3')setLabel('REM'); else if(e.key==='4')setLabel('Unclear');
+  else if(e.key==='j'||e.key==='J'||e.key==='ArrowLeft')step(-1);
+  else if(e.key==='l'||e.key==='L'||e.key==='ArrowRight')step(1);
+  else if(e.key==='s'&&(e.metaKey||e.ctrlKey)){e.preventDefault();save(true);}
+});
+loadCycles();
+</script>
+</body>
+</html>
