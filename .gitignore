@@ -162,3 +162,5 @@ __pycache__/
 *$py.class
 instance/
 .webassets-cache
+# Cloud Run config snapshots: carry inline env values (APP_USERNAME)
+deploy/snapshots/
