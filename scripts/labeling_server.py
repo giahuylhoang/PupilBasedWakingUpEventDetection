@@ -32,6 +32,7 @@ from __future__ import annotations
 
 import csv
 import datetime as _dt
+import math
 import os
 import re
 from pathlib import Path
@@ -282,6 +283,23 @@ def _eye_key(key: str) -> str:
     return key
 
 
+def _finite_points(ts: list, ys: list) -> tuple[list, list]:
+    """Make a trace safe to serialise as JSON.
+
+    A non-finite VALUE becomes None: the frontend already treats null as "lift
+    the pen", so the trace draws with a gap instead of a fake datapoint.
+    A non-finite TIME drops the point entirely -- it cannot be placed on the
+    x-axis, and the frontend only null-checks y.
+    """
+    out_t, out_y = [], []
+    for tv, yv in zip(ts, ys):
+        if tv is None or not math.isfinite(tv):
+            continue
+        out_t.append(float(tv))
+        out_y.append(None if yv is None or not math.isfinite(yv) else float(yv))
+    return out_t, out_y
+
+
 def downsample(t: np.ndarray, y: np.ndarray, max_points: int = MAX_POINTS):
     """Reduce a trace to <= max_points using block min/max so spikes survive.
 
@@ -290,7 +308,14 @@ def downsample(t: np.ndarray, y: np.ndarray, max_points: int = MAX_POINTS):
     """
     n = len(t)
     if n <= max_points:
-        return t.tolist(), y.tolist()
+        # Short traces (arteriole ~1761 points, calcium ~1760) are sent as-is.
+        # They must still be scrubbed: Python's json writes a bare NaN, which is
+        # NOT valid JSON. The browser's JSON.parse rejects the whole response,
+        # so openCycle() throws and the cycle renders as nothing at all -- while
+        # the request still looks like a clean HTTP 200 in the logs. That is
+        # exactly how four arteriole traces (one empty trailing CSV cell each)
+        # made five cycles silently unopenable.
+        return _finite_points(t.tolist(), y.tolist())
     n_blocks = max(1, max_points // 2)
     idx = np.array_split(np.arange(n), n_blocks)
     out_t, out_y = [], []
@@ -309,7 +334,9 @@ def downsample(t: np.ndarray, y: np.ndarray, max_points: int = MAX_POINTS):
         for j in sorted((jmin, jmax)):
             out_t.append(float(t[j]))
             out_y.append(float(y[j]))
-    return out_t, out_y
+    # Long traces rarely leak a NaN (an all-NaN block already becomes None),
+    # but a non-finite timestamp would still slip through, so scrub both paths.
+    return _finite_points(out_t, out_y)
 
 
 def load_trace(relpath: str):
