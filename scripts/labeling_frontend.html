@@ -31,6 +31,9 @@
   .cyc:hover{background:#1e222b}
   .cyc.active{background:#243047;border-left:3px solid var(--accent)}
   .cyc .meta{font-size:11px;color:var(--muted)}
+  /* Full-weight date: distinguishes cycle 7 on 2024.06.01 from cycle 7 on
+     2025.06.01, which as small grey text were repeatedly confused. */
+  .cyc .date{font-size:12px;color:var(--ink);font-variant-numeric:tabular-nums}
   .cyc .badge{font-size:11px;color:var(--muted);white-space:nowrap}
   main{flex:1;display:flex;flex-direction:column;overflow:hidden}
   .topbar{padding:8px 16px;border-bottom:1px solid var(--line);
@@ -123,10 +126,16 @@ async function loadCycles(){
   const box = $('#cyclist'); box.innerHTML='';
   let lastCohort=null;
   cycles.forEach(c=>{
-    if(c.cohort!==lastCohort){ lastCohort=c.cohort;
-      const h=document.createElement('h2'); h.textContent=c.cohort||'(unknown)'; box.appendChild(h); }
+    // Group by cohort AND group: IP3R2 contains both KD and scramble, and with a
+    // cohort-only heading the two were interleaved under one "IP3R2" title.
+    const section=(c.cohort||'(unknown)')+(c.group?' \u2014 '+c.group:'');
+    if(section!==lastCohort){ lastCohort=section;
+      const h=document.createElement('h2'); h.textContent=section; box.appendChild(h); }
     const d=document.createElement('div'); d.className='cyc'; d.dataset.key=c.key;
-    d.innerHTML=`<div><div>cycle ${c.cycle||'?'} <span class="meta">${c.date||''}</span></div>
+    // Date is shown at full weight next to the cycle number: several dates share
+    // the same cycle numbers (cycle 7 exists on 2024.06.01 KD and 2025.06.01
+    // scramble), so a de-emphasised date made them easy to mix up.
+    d.innerHTML=`<div><div>cycle ${c.cycle||'?'} <span class="date">${c.date||''}</span></div>
       <div class="meta">${c.group||''}</div></div>
       <div class="badge">${c.labeled? c.labeled+' ✓':''}</div>`;
     d.onclick=()=>openCycle(c.key);
