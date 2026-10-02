@@ -31,8 +31,7 @@ rng = np.random.default_rng(0)
 # --------------------------------------------------------------------------- #
 def get_events():
     keys = C.keys_for(GROUP)
-    ev = C.event_table(keys)
-    ev = ev.reset_index(drop=True)
+    ev = C.response_events(keys)   # pupil-anchored, non-overlapping (v2)
     return keys, ev
 
 
@@ -122,6 +121,10 @@ def panel_3A(ev):
     ax_p.axvline(0, color="k", lw=1, ls="--")
     ax_p.axvspan(C.BASE_WIN[0], C.BASE_WIN[1], color="grey", alpha=0.3, label="baseline")
     ax_p.axvspan(C.RESP_WIN[0], C.RESP_WIN[1], color="orange", alpha=0.2, label="response")
+    t0_label = getattr(r, "t0_label", None)
+    if t0_label is not None and abs(t0_label - t0) > 0.05:
+        ax_p.axvline(t0_label - t0, color="k", ls=":", lw=1.0,
+                     label=f"label boundary ({t0_label - t0:+.1f} s)")
     ax_p.legend(loc="upper right", fontsize=7, frameon=False)
     ax_p.set_title(f"Fig. 3A — example N2W event ({r.key}, t0={t0:.0f}s)", fontsize=10)
 
@@ -602,9 +605,10 @@ def write_notes(h, lmm_F, lmm_G, n2w_mouse_summ, ma_mouse_summ):
 
     lines.append("\n## Caveats\n")
     lines.append(
-        "- Latencies (time-to-peak, Ca-minus-art latency difference) are bounded by the "
-        "5-s label resolution of the manual state scoring; sub-5-s differences are not "
-        "interpretable, and this is noted directly on the quantification panels.\n")
+        "- Events are pupil-anchored (v2): t0 is pupil dilation onset found within +/-10 s "
+        "of the 5-s label boundary (C.response_events), and events with a neighbour within "
+        "-15..+20 s are dropped. Events without a clear pupil rise keep the label t0, so "
+        "latencies are still only reliable to a few seconds.\n")
     lines.append(
         "- MA n is small (WT: "
         f"{h['MA_n_events']} events / {h['MA_n_days']} days) — statistics reported for "

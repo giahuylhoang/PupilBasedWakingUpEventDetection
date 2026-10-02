@@ -214,3 +214,23 @@ def test_drop_overlapping_uses_window_and_is_per_cycle():
     kept = C.drop_overlapping(ev)
     # the two cycle-a MAs 10 s apart drop each other; 300 s and the other cycle stay
     assert sorted(zip(kept.key, kept.t0)) == [("a", 300.0), ("b", 100.0)]
+
+
+def test_lmm_flags_collapsed_mouse_variance():
+    import pandas as pd
+    rng = np.random.default_rng(3)
+    rows = []
+    for mi in range(8):                                    # no true mouse effect
+        for _ in range(15):
+            g = mi % 2
+            rows.append(dict(mouse=f"m{mi}", g=g, y=0.1 * g + rng.normal(0, 1)))
+    t = C.lmm(pd.DataFrame(rows), "y", "g")
+    assert "degenerate_fit" in t and bool(t["degenerate_fit"].iloc[0])
+
+    rows = []
+    for mi in range(8):                                    # strong mouse effect
+        off = rng.normal(0, 3)
+        for _ in range(15):
+            rows.append(dict(mouse=f"m{mi}", g=mi % 2, y=off + rng.normal(0, 1)))
+    t = C.lmm(pd.DataFrame(rows), "y", "g")
+    assert not bool(t["degenerate_fit"].iloc[0])

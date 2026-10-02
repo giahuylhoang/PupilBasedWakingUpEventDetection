@@ -51,14 +51,14 @@ def build_events(ev_type: str, label_mode: str) -> pd.DataFrame:
     manual, since that is all that exists for SCR)."""
     C.set_label_mode("manual")
     scr_keys = C.keys_for("SCR")
-    ev_scr = C.event_table(scr_keys)
+    ev_scr = C.response_events(scr_keys)   # pupil-anchored, non-overlapping (v2)
     ev_scr = ev_scr[ev_scr["type"] == ev_type].copy()
     ev_scr["label_mode"] = "manual"
     ev_scr["ml_derived"] = False
 
     C.set_label_mode(label_mode)
     kd_keys = C.keys_for("KD")
-    ev_kd = C.event_table(kd_keys)
+    ev_kd = C.response_events(kd_keys)
     ev_kd = ev_kd[ev_kd["type"] == ev_type].copy()
     ev_kd["label_mode"] = label_mode
     # mark events on days whose bins are partly/fully ML-derived

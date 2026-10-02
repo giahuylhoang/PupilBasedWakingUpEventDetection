@@ -90,7 +90,9 @@ TRACE_DIR = ROOT / "data" / "pupil_whisker_arteriole"
 LABEL_DIR = ROOT / "data" / "labels_snapshot_2026-10-01"
 LABEL_PRED_DIR = ROOT / "data" / "labels_predicted_2026-10-01"
 EYE_DIR = ROOT / "data" / "pupil_eye_motion"
-OUT = ROOT / "data" / "RESULTS_figures_prelim_2026-10-01"
+# v2 (2026-10-01): event-triggered responses use refined events (response_events).
+# v1 output, built on raw label-boundary events, is kept in RESULTS_figures_prelim_2026-10-01/.
+OUT = ROOT / "data" / "RESULTS_figures_prelim_2026-10-01_v2"
 FIG_DIR = OUT / "figures"
 TAB_DIR = OUT / "tables"
 
@@ -466,7 +468,7 @@ def event_table(keys) -> pd.DataFrame:
 
 
 # --------------------------------------------------------------------------- #
-# event refinements (sensitivity analysis; figures built 2026-10-01 do NOT use them)
+# event refinements (default for response analyses since v2, via response_events)
 # --------------------------------------------------------------------------- #
 ANCHOR_SEARCH = (-10.0, 10.0)    # search window around the label boundary (s)
 ANCHOR_MIN_RISE = 0.5            # pupil must rise >= 0.5 z, else keep the label t0
@@ -534,6 +536,19 @@ def anchor_to_pupil(ev: pd.DataFrame) -> pd.DataFrame:
 
 
 OVERLAP_WIN = (-15.0, 20.0)      # another event onset inside this window -> drop
+
+
+def response_events(keys) -> pd.DataFrame:
+    """Events for EVENT-TRIGGERED RESPONSE analyses (ETAs, peaks, heat maps, KD vs
+    scramble responses): t0 moved to pupil dilation onset, then events with a
+    neighbour within OVERLAP_WIN dropped. Adopted after the 2026-10-01 sensitivity
+    analysis (scripts/event_refinement_sensitivity.py) showed WT responses unchanged
+    and the label boundary lagging pupil onset by ~1-2 s.
+
+    Do NOT use for event COUNTS or RATES (bouts/h, MA/h): dropping overlapping
+    events would undercount them. Use event_table() there.
+    """
+    return drop_overlapping(anchor_to_pupil(event_table(keys))).reset_index(drop=True)
 
 
 def drop_overlapping(ev: pd.DataFrame, win=OVERLAP_WIN) -> pd.DataFrame:
@@ -776,6 +791,9 @@ def group_test(a, b):
     return res
 
 
+LMM_DEGENERATE_RATIO = 0.01
+
+
 def lmm(df, value, fixed, group="mouse"):
     """Linear mixed model value ~ fixed + (1|mouse). Returns the fixed-effect
     table, or None when it cannot be fitted (too few mice)."""
@@ -792,6 +810,12 @@ def lmm(df, value, fixed, group="mouse"):
         t = m.summary().tables[1]
         t = t.reset_index().rename(columns={"index": "term"})
         t["n_obs"], t["n_mice"] = len(d), d[group].nunique()
+        # If the between-mouse variance collapses (<1% of residual), the model has
+        # silently become event-level OLS -- events treated as independent, the
+        # pseudoreplication in the May ANCOVA -- and its p-values are too small.
+        ratio = float(m.cov_re.iloc[0, 0]) / float(m.scale) if m.scale else float("nan")
+        t["mouse_var_over_resid"] = ratio
+        t["degenerate_fit"] = bool(np.isfinite(ratio) and ratio < LMM_DEGENERATE_RATIO)
         return t
     except Exception as exc:  # noqa: BLE001 - report, don't crash a figure
         return pd.DataFrame([dict(term="FIT_FAILED", note=str(exc)[:120])])
@@ -841,5 +865,5 @@ def n_note(df, group_col="group", mouse_col="mouse", event_col=None):
     return " · ".join(parts)
 
 
-PRELIM_STAMP = ("PRELIMINARY — manual labels snapshot 2026-10-01; unit = recording day "
-                "(no animal IDs); not for manuscript")
+PRELIM_STAMP = ("PRELIMINARY v2 — labels snapshot 2026-10-01; event responses use pupil-anchored, "
+                "non-overlapping events; unit = recording day (no animal IDs); not for manuscript")

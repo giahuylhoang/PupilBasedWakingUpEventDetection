@@ -188,7 +188,7 @@ def make_fig_rem():
 def make_fig_ne():
     keys = C.keys_for(NE_GROUP)
     days = sorted(set(C.load_cycle(k).info.mouse for k in keys))
-    ev = C.event_table(keys)
+    ev = C.response_events(keys)   # NE ETAs: pupil-anchored, non-overlapping (v2)
 
     fig = plt.figure(figsize=(16, 11))
     gs = fig.add_gridspec(3, 3, height_ratios=[1.0, 1.0, 1.0], hspace=0.5, wspace=0.42)
