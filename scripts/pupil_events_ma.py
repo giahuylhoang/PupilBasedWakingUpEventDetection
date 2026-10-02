@@ -268,7 +268,7 @@ def surrogate_tests(S: pd.DataFrame) -> pd.DataFrame:
 # --------------------------------------------------------------------------- #
 def eta_by_group(ma, fname, title):
     sig_rows = ("pupil", "whisk", "art", "ca_or_ne")
-    fig, axes = plt.subplots(len(sig_rows), 1, figsize=(9, 15), sharex=True)   # taller ETAs
+    fig, axes = plt.subplots(1, len(sig_rows), figsize=(16, 4.8))   # side by side, near-square panels
     for ax, s in zip(axes, sig_rows):
         for g in GROUPS:
             e = ma[ma.group == g].assign(t0=lambda x: x.Start)
@@ -286,11 +286,12 @@ def eta_by_group(ma, fname, title):
         ax.axvspan(*C.BASE_WIN, color="0.88", lw=0, zorder=0)
         ax.axvspan(*C.RESP_WIN, color="#FFF3E0", lw=0, zorder=0)
         ax.axvline(0, color="k", lw=.6)
-        ax.set_ylabel({"pupil": "pupil (z)", "whisk": "whisker (z)", "art": "arteriole ΔD/D₀",
-                       "ca_or_ne": "Ca²⁺ / NE ΔF/F₀"}[s], fontsize=9)
-        ax.legend(fontsize=7, loc="upper right")
-    axes[-1].set_xlabel("time from pupil onset (s)")
-    axes[-1].set_xlim(-20, 40)
+        ax.set_title({"pupil": "pupil (z)", "whisk": "whisker (z)", "art": "arteriole ΔD/D₀",
+                      "ca_or_ne": "Ca²⁺ / NE ΔF/F₀"}[s], fontsize=10)
+        ax.set_xlabel("time from pupil onset (s)", fontsize=8)
+        ax.set_xlim(-20, 40)
+    axes[0].legend(fontsize=6.5, loc="upper right", frameon=False)
+    axes[0].set_ylabel("mean ± SEM across days", fontsize=8)
     fig.suptitle(title + "\n" + C.PRELIM_STAMP, fontsize=9)
     fig.tight_layout()
     fig.savefig(OUT / "figures" / fname, dpi=150, bbox_inches="tight")

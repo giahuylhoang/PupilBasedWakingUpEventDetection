@@ -206,15 +206,15 @@ def panel_eta(axes, ev: pd.DataFrame, eps: dict, label_mode: str, event_label: s
             ax.fill_between(rg, mean - sem, mean + sem, color=C.GROUP_COL[g], alpha=0.25, lw=0)
         ax.axvline(0, color="k", lw=0.6, ls="--")
         ax.axvspan(C.RESP_WIN[0], C.RESP_WIN[1], color="gray", alpha=0.08, lw=0)
-        ax.set_ylabel(ETA_YLABEL[s], fontsize=7.5, labelpad=4)
         ax.tick_params(labelsize=7)
-        ax.legend(fontsize=6, loc="upper right", frameon=False)
+        # side by side (one panel per signal): each panel is near-square, not a
+        # full-width strip (Grant: ETAs were too wide and flat)
+        ax.set_title(ETA_YLABEL[s].replace("\n", " "), fontsize=9)
+        ax.set_xlabel("time from event onset (s)", fontsize=8)
+        ax.set_xlim(-20, 40)
         if i == 0:
-            ax.set_title(f"{event_label} event-triggered average ({label_mode})", fontsize=9)
-        if i < len(SIGS) - 1:
-            ax.tick_params(labelbottom=False)
-        else:
-            ax.set_xlabel("time from event onset (s)", fontsize=8)
+            ax.legend(fontsize=6.5, loc="upper left", frameon=False)
+            ax.set_ylabel(f"{event_label} ETA ({label_mode})\nmean ± SEM across days", fontsize=8)
 
 
 # --------------------------------------------------------------------------- #
@@ -405,8 +405,8 @@ def main():
     n2w_primary = data[("N2W", "manual+ml")]
     ev_n2w, eps_n2w, met_n2w = n2w_primary["ev"], n2w_primary["eps"], n2w_primary["met"]
 
-    fig = plt.figure(figsize=(14, 26))   # 8B event averages made taller (Grant: ETAs too flat)
-    gs = fig.add_gridspec(4, 1, height_ratios=[1.1, 2.6, 1.4, 1.1], hspace=0.45)
+    fig = plt.figure(figsize=(14, 21))
+    gs = fig.add_gridspec(4, 1, height_ratios=[1.1, 1.0, 1.4, 1.1], hspace=0.55)
 
     # 8A
     gsA = gs[0].subgridspec(4, 2, hspace=0.5, wspace=0.25)
@@ -417,10 +417,10 @@ def main():
     axA[0, 0].annotate("8A", xy=(-0.25, 1.25), xycoords="axes fraction", fontsize=13, fontweight="bold")
 
     # 8B
-    gsB = gs[1].subgridspec(4, 1, hspace=0.5)
-    axB = np.array([fig.add_subplot(gsB[r]) for r in range(4)])
+    gsB = gs[1].subgridspec(1, 4, wspace=0.32)          # side by side, near-square panels
+    axB = np.array([fig.add_subplot(gsB[0, c]) for c in range(4)])
     panel_eta(axB, ev_n2w, eps_n2w, "manual+ml", "N2W")
-    axB[0].annotate("8B", xy=(-0.08, 1.3), xycoords="axes fraction", fontsize=13, fontweight="bold")
+    axB[0].annotate("8B", xy=(-0.35, 1.08), xycoords="axes fraction", fontsize=13, fontweight="bold")
 
     # 8C
     sub8C = fig.add_subfigure(gs[2])
@@ -452,13 +452,13 @@ def main():
     ma_primary = data[("MA", "manual+ml")]
     ev_ma, eps_ma, met_ma = ma_primary["ev"], ma_primary["eps"], ma_primary["met"]
 
-    fig2 = plt.figure(figsize=(14, 16))   # 8E event averages made taller
-    gs2 = fig2.add_gridspec(2, 1, height_ratios=[2.6, 1.1], hspace=0.35)
+    fig2 = plt.figure(figsize=(14, 10))
+    gs2 = fig2.add_gridspec(2, 1, height_ratios=[1.0, 1.0], hspace=0.45)
 
-    gsE = gs2[0].subgridspec(4, 1, hspace=0.5)
-    axE = np.array([fig2.add_subplot(gsE[r]) for r in range(4)])
+    gsE = gs2[0].subgridspec(1, 4, wspace=0.32)         # side by side, near-square panels
+    axE = np.array([fig2.add_subplot(gsE[0, c]) for c in range(4)])
     panel_eta(axE, ev_ma, eps_ma, "manual+ml", "MA")
-    axE[0].annotate("8E", xy=(-0.08, 1.3), xycoords="axes fraction", fontsize=13, fontweight="bold")
+    axE[0].annotate("8E", xy=(-0.35, 1.08), xycoords="axes fraction", fontsize=13, fontweight="bold")
 
     gsF = gs2[1].subgridspec(1, 8, wspace=0.6)
     axF = np.array([fig2.add_subplot(gsF[0, i]) for i in range(8)])
