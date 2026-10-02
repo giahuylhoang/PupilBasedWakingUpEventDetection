@@ -1,0 +1,7 @@
+# baton:start
+.baton/BRIEF.md merge=baton linguist-generated=true
+.baton/streams/*/BRIEF.md merge=baton linguist-generated=true
+.baton/graph.json merge=baton linguist-generated=true
+.kiro/steering/baton.md merge=baton linguist-generated=true
+.agents/rules/baton.md merge=baton linguist-generated=true
+# baton:end

@@ -1,0 +1,18 @@
+# baton settings for this repo. Hand-edited; `baton init` writes these defaults.
+
+[baton]
+format = 1
+initialized = 2026-10-01  # the sweep ignores sessions that started before this date
+
+[brief]
+repo_tokens = 1000
+stream_tokens = 1500
+max_decisions = 12
+max_threads = 10
+recent_sessions = 5
+
+[redact]
+patterns = []  # extra regexes, e.g. participant-ID formats
+
+[sweep]
+idle_minutes = 30
