@@ -62,8 +62,8 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 from scripts.figs_prelim import common as C  # noqa: E402
 
-OUT_LAB = ROOT / "data" / "labels_predicted_2026-10-01"
-OUT = ROOT / "data" / "RESULTS_state_ml_2026-10-01"
+OUT_LAB = C.LABEL_PRED_DIR       # follows PRELIM_LABEL_SET (v2: original, v3: corrected)
+OUT = C.ML_DIR
 CLASSES = ("Awake", "NREM")
 SEED = 7
 

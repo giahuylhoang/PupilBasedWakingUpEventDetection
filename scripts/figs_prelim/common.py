@@ -87,12 +87,29 @@ from vasomotion_app.preprocess import highpass_filter  # noqa: E402
 from vasomotion_app.psd_methods import PSDParams, compute_psd  # noqa: E402
 
 TRACE_DIR = ROOT / "data" / "pupil_whisker_arteriole"
-LABEL_DIR = ROOT / "data" / "labels_snapshot_2026-10-01"
-LABEL_PRED_DIR = ROOT / "data" / "labels_predicted_2026-10-01"
+# Which manual label set every analysis reads. Chosen once per run via the
+# PRELIM_LABEL_SET environment variable so a version can never mix label sets:
+#   original   Florence's labels as saved (snapshot 2026-10-01)   -> v2 (locked)
+#   corrected  + pattern-2 corrections (scripts/propose_label_corrections.py) -> v3
+LABEL_SET = os.environ.get("PRELIM_LABEL_SET", "original")
+_LABEL_SETS = {
+    "original": dict(labels="labels_snapshot_2026-10-01", pred="labels_predicted_2026-10-01",
+                     ml="RESULTS_state_ml_2026-10-01", out="RESULTS_figures_prelim_2026-10-01_v2",
+                     stamp="v2"),
+    "corrected": dict(labels="labels_corrected_2026-10-01", pred="labels_predicted_2026-10-01_v3",
+                      ml="RESULTS_state_ml_2026-10-01_v3", out="RESULTS_figures_prelim_2026-10-01_v3",
+                      stamp="v3, pattern-2 label corrections NOT YET REVIEWED"),
+}
+if LABEL_SET not in _LABEL_SETS:
+    raise ValueError(f"PRELIM_LABEL_SET must be one of {sorted(_LABEL_SETS)}, got {LABEL_SET!r}")
+_LS = _LABEL_SETS[LABEL_SET]
+LABEL_DIR = ROOT / "data" / _LS["labels"]
+LABEL_PRED_DIR = ROOT / "data" / _LS["pred"]
+ML_DIR = ROOT / "data" / _LS["ml"]
 EYE_DIR = ROOT / "data" / "pupil_eye_motion"
 # v2 (2026-10-01): event-triggered responses use refined events (response_events).
 # v1 output, built on raw label-boundary events, is kept in RESULTS_figures_prelim_2026-10-01/.
-OUT = ROOT / "data" / "RESULTS_figures_prelim_2026-10-01_v2"
+OUT = ROOT / "data" / _LS["out"]
 FIG_DIR = OUT / "figures"
 TAB_DIR = OUT / "tables"
 
@@ -865,5 +882,5 @@ def n_note(df, group_col="group", mouse_col="mouse", event_col=None):
     return " · ".join(parts)
 
 
-PRELIM_STAMP = ("PRELIMINARY v2 — labels snapshot 2026-10-01; event responses use pupil-anchored, "
+PRELIM_STAMP = (f"PRELIMINARY {_LS['stamp']} — labels 2026-10-01; event responses use pupil-anchored, "
                 "non-overlapping events; unit = recording day (no animal IDs); not for manuscript")

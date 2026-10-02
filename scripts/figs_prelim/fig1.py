@@ -53,7 +53,7 @@ import matplotlib.pyplot as plt  # noqa: E402
 import matplotlib.gridspec as gridspec  # noqa: E402
 
 GROUP = "WT"
-ML_TABLE_DIR = C.ROOT / "data" / "RESULTS_state_ml_2026-10-01" / "tables"
+ML_TABLE_DIR = C.ML_DIR / "tables"
 RULE = "smoothed_3bin"
 NOTES_PATH = C.OUT / "notes" / "fig1.md"
 
