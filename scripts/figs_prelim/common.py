@@ -109,7 +109,9 @@ ML_DIR = ROOT / "data" / _LS["ml"]
 EYE_DIR = ROOT / "data" / "pupil_eye_motion"
 # v2 (2026-10-01): event-triggered responses use refined events (response_events).
 # v1 output, built on raw label-boundary events, is kept in RESULTS_figures_prelim_2026-10-01/.
-OUT = ROOT / "data" / _LS["out"]
+# PRELIM_OUT_SUFFIX writes a layout-only refresh of a locked version to a new folder
+# (e.g. "_tallETA" -> RESULTS_figures_prelim_2026-10-01_v2.1_tallETA); numbers must not change.
+OUT = ROOT / "data" / (_LS["out"] + os.environ.get("PRELIM_OUT_SUFFIX", ""))
 FIG_DIR = OUT / "figures"
 TAB_DIR = OUT / "tables"
 

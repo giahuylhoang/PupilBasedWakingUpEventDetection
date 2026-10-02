@@ -190,8 +190,8 @@ def make_fig_ne():
     days = sorted(set(C.load_cycle(k).info.mouse for k in keys))
     ev = C.response_events(keys)   # NE ETAs: pupil-anchored, non-overlapping (v2)
 
-    fig = plt.figure(figsize=(16, 11))
-    gs = fig.add_gridspec(3, 3, height_ratios=[1.0, 1.0, 1.0], hspace=0.5, wspace=0.42)
+    fig = plt.figure(figsize=(16, 15))   # taller event-average rows
+    gs = fig.add_gridspec(3, 3, height_ratios=[1.0, 1.5, 1.0], hspace=0.5, wspace=0.42)
 
     # Panel A: example trace with state shading (pupil, whisk, art, ne)
     axA = fig.add_subplot(gs[0, :])

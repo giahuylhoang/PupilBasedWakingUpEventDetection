@@ -167,7 +167,7 @@ def panel_eta(ev, ev_type, title_prefix, n_target=None):
     sub = ev[ev["type"] == ev_type].reset_index(drop=True)
     n_days = sub["mouse"].nunique()
     n_ev = len(sub)
-    fig, axes = plt.subplots(1, 4, figsize=(15, 3.2), sharex=True)
+    fig, axes = plt.subplots(1, 4, figsize=(15, 5.5), sharex=True)   # taller (Grant: ETAs too flat)
     for ax, sig in zip(axes, SIGNALS_ETA):
         rg, M = C.epochs_for(sub, sig)
         mice, mouse_mat = mouse_level_mean_trace(sub, rg, M)

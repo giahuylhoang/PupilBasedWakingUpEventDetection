@@ -268,7 +268,7 @@ def surrogate_tests(S: pd.DataFrame) -> pd.DataFrame:
 # --------------------------------------------------------------------------- #
 def eta_by_group(ma, fname, title):
     sig_rows = ("pupil", "whisk", "art", "ca_or_ne")
-    fig, axes = plt.subplots(len(sig_rows), 1, figsize=(9, 9), sharex=True)
+    fig, axes = plt.subplots(len(sig_rows), 1, figsize=(9, 15), sharex=True)   # taller ETAs
     for ax, s in zip(axes, sig_rows):
         for g in GROUPS:
             e = ma[ma.group == g].assign(t0=lambda x: x.Start)

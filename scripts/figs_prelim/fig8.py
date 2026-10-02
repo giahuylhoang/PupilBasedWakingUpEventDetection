@@ -405,8 +405,8 @@ def main():
     n2w_primary = data[("N2W", "manual+ml")]
     ev_n2w, eps_n2w, met_n2w = n2w_primary["ev"], n2w_primary["eps"], n2w_primary["met"]
 
-    fig = plt.figure(figsize=(14, 19))
-    gs = fig.add_gridspec(4, 1, height_ratios=[1.1, 1.1, 1.4, 1.1], hspace=0.55)
+    fig = plt.figure(figsize=(14, 26))   # 8B event averages made taller (Grant: ETAs too flat)
+    gs = fig.add_gridspec(4, 1, height_ratios=[1.1, 2.6, 1.4, 1.1], hspace=0.45)
 
     # 8A
     gsA = gs[0].subgridspec(4, 2, hspace=0.5, wspace=0.25)
@@ -452,8 +452,8 @@ def main():
     ma_primary = data[("MA", "manual+ml")]
     ev_ma, eps_ma, met_ma = ma_primary["ev"], ma_primary["eps"], ma_primary["met"]
 
-    fig2 = plt.figure(figsize=(14, 10))
-    gs2 = fig2.add_gridspec(2, 1, height_ratios=[1.0, 1.1], hspace=0.5)
+    fig2 = plt.figure(figsize=(14, 16))   # 8E event averages made taller
+    gs2 = fig2.add_gridspec(2, 1, height_ratios=[2.6, 1.1], hspace=0.35)
 
     gsE = gs2[0].subgridspec(4, 1, hspace=0.5)
     axE = np.array([fig2.add_subplot(gsE[r]) for r in range(4)])

@@ -193,7 +193,7 @@ def main():
         print(tab.to_string())
 
     # ---------------- figure ----------------------------------------------------
-    fig, axes = plt.subplots(2, 3, figsize=(16, 8.2), sharex=True)
+    fig, axes = plt.subplots(2, 3, figsize=(16, 12), sharex=True)   # taller ETAs
     for r, typ in enumerate(("N2W", "MA")):
         for c, s in enumerate(SIGNALS):
             ax = axes[r, c]
