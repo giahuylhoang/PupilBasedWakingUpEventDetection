@@ -465,6 +465,94 @@ def event_table(keys) -> pd.DataFrame:
     return pd.concat(frames, ignore_index=True)
 
 
+# --------------------------------------------------------------------------- #
+# event refinements (sensitivity analysis; figures built 2026-10-01 do NOT use them)
+# --------------------------------------------------------------------------- #
+ANCHOR_SEARCH = (-10.0, 10.0)    # search window around the label boundary (s)
+ANCHOR_MIN_RISE = 0.5            # pupil must rise >= 0.5 z, else keep the label t0
+
+
+def pupil_onset(t, y, t_label):
+    """Pupil dilation onset near a label boundary, or None if there is no clear rise.
+
+    The label boundary is only known to the nearest 5-s bin. This refines it from
+    pupil alone (never from arteriole or Ca, so it cannot select for the outcome):
+      baseline b = median pupil z over [t_label-15, t_label-5]
+      peak     p = max of 1-s-smoothed pupil over [t_label-5, t_label+10]
+      half-max crossing = first time pupil >= b + 0.5 (p - b), searched from
+                          t_label-10
+      onset    = last time before that crossing when pupil <= b + 0.1 (p - b),
+                 not earlier than t_label-10
+    """
+    fin = np.isfinite(y)
+    if fin.sum() < 20:
+        return None
+    s = pd.Series(np.where(fin, y, np.nan)).rolling(int(round(FS_BEH)), center=True,
+                                                     min_periods=1).mean().to_numpy()
+    lo, hi = t_label + ANCHOR_SEARCH[0], t_label + ANCHOR_SEARCH[1]
+    bm = (t >= t_label - 15) & (t < t_label - 5)
+    pm = (t >= t_label - 5) & (t <= t_label + 10)
+    if not np.isfinite(s[bm]).any() or not np.isfinite(s[pm]).any():
+        return None
+    b = np.nanmedian(s[bm])
+    p = np.nanmax(s[pm])
+    rise = p - b
+    if not np.isfinite(rise) or rise < ANCHOR_MIN_RISE:
+        return None
+    w = np.flatnonzero((t >= lo) & (t <= hi))
+    half = [i for i in w if np.isfinite(s[i]) and s[i] >= b + 0.5 * rise]
+    if not half:
+        return None
+    ih = half[0]
+    below = [i for i in w if i <= ih and np.isfinite(s[i]) and s[i] <= b + 0.1 * rise]
+    return float(t[below[-1]]) if below else float(t[w[0]])
+
+
+def anchor_to_pupil(ev: pd.DataFrame) -> pd.DataFrame:
+    """Copy of `ev` with t0 moved to pupil dilation onset for N2W and MA.
+
+    Adds t0_label (original), shift_s, anchored (bool). Events with no clear
+    pupil rise keep the label t0 (anchored=False). W2N and REM are not moved:
+    their defining pupil change is a constriction or none.
+    """
+    out = ev.copy()
+    out["t0_label"] = out["t0"]
+    out["anchored"] = False
+    for i, r in out.iterrows():
+        if r["type"] not in ("N2W", "MA"):
+            continue
+        cyc = load_cycle(r["key"])
+        if "pupil" not in cyc.sig:
+            continue
+        t, y = cyc.sig["pupil"]
+        on = pupil_onset(t, y, r["t0"])
+        if on is not None:
+            out.at[i, "t0"] = on
+            out.at[i, "anchored"] = True
+    out["shift_s"] = out["t0"] - out["t0_label"]
+    return out
+
+
+OVERLAP_WIN = (-15.0, 20.0)      # another event onset inside this window -> drop
+
+
+def drop_overlapping(ev: pd.DataFrame, win=OVERLAP_WIN) -> pd.DataFrame:
+    """Keep only events with no OTHER event (any type) starting within `win` of
+    their t0 in the same cycle. The window covers the -5..0 s baseline and the
+    0..15 s response plus margin, so a kept event's metrics cannot include a
+    neighbour's response. Uses the label t0 when present, so the result does
+    not depend on whether pupil anchoring was applied first."""
+    tcol = "t0_label" if "t0_label" in ev else "t0"
+    keep = np.ones(len(ev), bool)
+    for _, idx in ev.groupby("key").indices.items():
+        tt = ev[tcol].to_numpy()[idx]
+        for j, i in enumerate(idx):
+            d = np.delete(tt, j) - tt[j]
+            if np.any((d >= win[0]) & (d <= win[1])):
+                keep[i] = False
+    return ev[keep].copy()
+
+
 REL_GRID = {}
 
 

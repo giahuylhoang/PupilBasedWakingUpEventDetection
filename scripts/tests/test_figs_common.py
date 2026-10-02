@@ -179,3 +179,38 @@ def test_label_mode_switch_changes_kd_coverage():
     finally:
         C.set_label_mode("manual+ml")
     assert n_man == 7 and n_mix > n_man
+
+
+# ---------------------------------------------------------------- refinements
+def _ramp(onset, rise=2.0, noise=0.0, seed=0):
+    t = np.arange(0, 120, 1 / C.FS_BEH)
+    y = np.where(t < onset, 0.0, np.minimum((t - onset) / 3.0, 1.0) * rise)
+    y = y + noise * np.random.default_rng(seed).standard_normal(len(t))
+    return t, y
+
+
+def test_pupil_onset_recovers_true_onset_within_a_second():
+    for true_on, label in ((57.0, 60.0), (62.0, 60.0), (60.0, 60.0)):
+        t, y = _ramp(true_on, noise=0.05)
+        on = C.pupil_onset(t, y, label)
+        assert on is not None and abs(on - true_on) < 1.0, (true_on, on)
+
+
+def test_pupil_onset_rejects_flat_pupil():
+    t, y = _ramp(60.0, rise=0.2)                  # below ANCHOR_MIN_RISE
+    assert C.pupil_onset(t, y, 60.0) is None
+
+
+def test_pupil_onset_stays_inside_search_window():
+    t, y = _ramp(40.0)                            # rise 20 s before the label
+    on = C.pupil_onset(t, y, 60.0)
+    assert on is None or on >= 60.0 + C.ANCHOR_SEARCH[0]
+
+
+def test_drop_overlapping_uses_window_and_is_per_cycle():
+    import pandas as pd
+    ev = pd.DataFrame(dict(type=["MA", "MA", "N2W", "N2W"], t0=[100.0, 110.0, 300.0, 100.0],
+                           key=["a", "a", "a", "b"]))
+    kept = C.drop_overlapping(ev)
+    # the two cycle-a MAs 10 s apart drop each other; 300 s and the other cycle stay
+    assert sorted(zip(kept.key, kept.t0)) == [("a", 300.0), ("b", 100.0)]
