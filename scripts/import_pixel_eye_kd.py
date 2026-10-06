@@ -33,10 +33,20 @@ Outputs: data/pupil_eye_motion_pixel_2026-10-05/
     mapping.csv, qc/<key>.png
 Kept apart from data/pupil_eye_motion/ so analyses never mix the two methods.
 
-Usage: ./venv/bin/python -B scripts/import_pixel_eye_kd.py
+Usage:
+    ./venv/bin/python -B scripts/import_pixel_eye_kd.py              # IP3R2 KD (2026-10-05)
+    ./venv/bin/python -B scripts/import_pixel_eye_kd.py --set control # WT controls (2026-10-06)
+
+Control file: first row holds "cycle N" headers, so cycles are read from it.
+Frame rate is per sheet: n_frames / 900 s (2023.05.05 and 05.07 are 40 fps).
+Cycles are skipped when (a) the cycle is not on the site, or (b) DLC
+(location-based, 2-D) eye motion already exists for it: the site looks up
+the full key first, so uploading would hide the better DLC trace.
 """
 from __future__ import annotations
 
+import argparse
+import re
 import sys
 from pathlib import Path
 
@@ -50,22 +60,28 @@ from scipy.signal import butter, filtfilt
 sys.path.insert(0, str(Path(__file__).resolve().parent / "figs_prelim"))
 import common as C  # noqa: E402
 
-XLSX = C.ROOT / "pupil moving speed for ip3R2 kd.xlsx"
-OUT = C.ROOT / "data" / "pupil_eye_motion_pixel_2026-10-05"
-FPS = 50.0
+CYCLE_S = 900.0
 OUTLIER_Z = 5.0
 MAX_GAP_S = 1.0
 LP_CUT = 10.0
 # sheet name -> (site date, cycles in column order). Sheet "2025.11.25" has no
 # match on the site; its first two columns match 2025.10.25 cycles 9 and 10.
 # Its third column has no cycle on the site and is skipped.
-SHEETS = {
+KD_SHEETS = {
     "2023.08.25": ("2023.08.25", [5, 6, 7]),
     "2023.08.26": ("2023.08.26", [4, 5, 6]),
     "2024.02.18": ("2024.02.18", [5, 6, 7]),
     "2024.06.01": ("2024.06.01", [3, 4, 5, 6, 7]),
     "2025.11.25": ("2025.10.25", [9, 10, None]),
     "2025.11.01": ("2025.11.01", [9, 10, 11]),
+}
+SETS = {
+    "kd": dict(xlsx="pupil moving speed for ip3R2 kd.xlsx", out="pupil_eye_motion_pixel_2026-10-05",
+               header=False, prefix=lambda sheet: "IP3R2_KD", sheets=KD_SHEETS),
+    "control": dict(xlsx="control data pupil moving speed.xlsx",
+                    out="pupil_eye_motion_pixel_control_2026-10-06", header=True,
+                    prefix=lambda sheet: ("Extra_RestrosplenialCortex" if sheet.startswith("2023")
+                                          else "Extra_GCaMP8m"), sheets=None),
 }
 
 
@@ -75,15 +91,15 @@ def robust_z(y):
     return (y - med) / mad if mad > 0 else y * np.nan
 
 
-def clean_position(x):
+def clean_position(x, fps):
     x = x.copy()
     # outliers relative to a 5-s running median, so a camera/ROI step (e.g.
     # 2023.08.25 cycle 6 at ~140 s) is not mistaken for 140 s of bad frames
-    local = pd.Series(x).rolling(int(5 * FPS), center=True, min_periods=25).median().to_numpy()
+    local = pd.Series(x).rolling(int(5 * fps), center=True, min_periods=25).median().to_numpy()
     x[np.abs(robust_z(x - local)) > OUTLIER_Z * 2] = np.nan
-    s = pd.Series(x).interpolate(limit=int(MAX_GAP_S * FPS), limit_area="inside")
+    s = pd.Series(x).interpolate(limit=int(MAX_GAP_S * fps), limit_area="inside")
     x = s.to_numpy()
-    b, a = butter(4, LP_CUT / (FPS / 2), "low")
+    b, a = butter(4, LP_CUT / (fps / 2), "low")
     out = np.full_like(x, np.nan)
     fin = np.isfinite(x)
     edges = np.flatnonzero(np.diff(np.r_[0, fin.astype(int), 0]))
@@ -93,23 +109,23 @@ def clean_position(x):
     return out
 
 
-def match_scores(x, date, cycles):
+def match_scores(x, prefix, date, cycles, fps):
     """corr(5-s medians of column, 5-s medians of each candidate cycle's pupil)."""
-    t = np.arange(len(x)) / FPS
-    xs = pd.Series(x).rolling(int(5 * FPS), center=True, min_periods=50).median().to_numpy()
+    t = np.arange(len(x)) / fps
+    xs = pd.Series(x).rolling(int(5 * fps), center=True, min_periods=50).median().to_numpy()
     sc = {}
     for c in cycles:
-        tp, p = C.read_trace(f"IP3R2_KD_{date}_cycle{c}", "pupil")
+        tp, p = C.read_trace(f"{prefix}_{date}_cycle{c}", "pupil")
         if tp is None:
             continue
         pi = np.interp(t, tp, p, left=np.nan, right=np.nan)
-        ps = pd.Series(pi).rolling(int(5 * FPS), center=True, min_periods=50).median().to_numpy()
+        ps = pd.Series(pi).rolling(int(5 * fps), center=True, min_periods=50).median().to_numpy()
         m = np.isfinite(xs) & np.isfinite(ps)
         sc[c] = np.corrcoef(xs[m], ps[m])[0, 1] if m.sum() > 1000 else np.nan
     return sc
 
 
-def qc_plot(key, t, raw, pos, spd, z, path):
+def qc_plot(key, t, raw, pos, spd, z, path, fps):
     fig, axs = plt.subplots(3, 1, figsize=(15, 7), sharex=True, constrained_layout=True)
     axs[0].plot(t, raw, color="0.7", lw=0.5, label="raw")
     axs[0].plot(t, pos, color="#5D4037", lw=0.7, label="cleaned")
@@ -121,49 +137,81 @@ def qc_plot(key, t, raw, pos, spd, z, path):
     axs[2].plot(t, z, color="#00897B", lw=0.5)
     axs[2].set_ylabel("eye speed (robust z)"); axs[2].set_xlabel("time (s)")
     fig.suptitle(f"{key}: pixel-based pupil position -> eye speed  "
-                 f"(median {np.nanmedian(spd) * FPS:.1f} px/s)", fontsize=10, x=0.01, ha="left")
+                 f"(median {np.nanmedian(spd) * fps:.1f} px/s, {fps:.0f} fps)", fontsize=10, x=0.01, ha="left")
     fig.savefig(path, dpi=100); plt.close(fig)
 
 
+def dlc_exists(key):
+    for k in (key, re.sub(r"^Extra_", "", key)):
+        if (C.EYE_DIR / f"{k}_eyemotion_perframe.csv").exists():
+            return True
+    return False
+
+
+def sheet_columns(d, sheet, cfg):
+    """[(column, cycle or None, values)]"""
+    cols = [c for c in d.columns if d[c].notna().sum() > 100]
+    if cfg["header"]:
+        out = []
+        for c in cols:
+            m = re.search(r"(\d+)", str(d[c].iloc[0]))
+            if not m:
+                sys.exit(f"{sheet} col {c}: no cycle number in header {d[c].iloc[0]!r}")
+            out.append((c, int(m.group(1)), pd.to_numeric(d[c].iloc[1:], errors="coerce").to_numpy(float)))
+        return sheet, out
+    date, cycles = cfg["sheets"][sheet]
+    if len(cols) != len(cycles):
+        sys.exit(f"{sheet}: {len(cols)} data columns but {len(cycles)} cycles mapped")
+    return date, [(c, cy, d[c].to_numpy(float)) for c, cy in zip(cols, cycles)]
+
+
 def main():
-    (OUT / "qc").mkdir(parents=True, exist_ok=True)
-    xl = pd.ExcelFile(XLSX)
+    ap = argparse.ArgumentParser()
+    ap.add_argument("--set", default="kd", choices=sorted(SETS))
+    cfg = SETS[ap.parse_args().set]
+    out = C.ROOT / "data" / cfg["out"]
+    (out / "qc").mkdir(parents=True, exist_ok=True)
+    xl = pd.ExcelFile(C.ROOT / cfg["xlsx"])
     rows = []
     for sheet in xl.sheet_names:
-        date, cycles = SHEETS[sheet]
         d = pd.read_excel(xl, sheet, header=None)
-        cols = [c for c in d.columns if d[c].notna().sum() > 100]
-        if len(cols) != len(cycles):
-            sys.exit(f"{sheet}: {len(cols)} data columns but {len(cycles)} cycles mapped")
-        cands = [c for c in cycles if c is not None]
-        for col, cyc in zip(cols, cycles):
-            raw = d[col].to_numpy(float)
-            sc = match_scores(raw, date, cands)
+        date, cols = sheet_columns(d, sheet, cfg)
+        prefix = cfg["prefix"](sheet)
+        cands = [cy for _, cy, _ in cols if cy is not None]
+        for col, cyc, raw in cols:
+            fps = round(len(raw) / CYCLE_S / 10) * 10           # 36000 -> 40, 45000 -> 50
+            key = f"{prefix}_{date}_cycle{cyc}" if cyc is not None else None
+            sc = match_scores(raw, prefix, date, cands, fps)
             best = max(sc, key=lambda k: -np.inf if np.isnan(sc[k]) else sc[k]) if sc else None
-            row = dict(sheet=sheet, column=int(col), cycle=cyc, n_frames=int(np.isfinite(raw).sum()),
-                       r_assigned=sc.get(cyc, np.nan), best_match=best,
-                       r_best=sc.get(best, np.nan), **{f"r_c{k}": v for k, v in sc.items()})
-            if cyc is None:
-                row["status"] = "skipped: no cycle on site"
-                rows.append(row); continue
-            key = f"IP3R2_KD_{date}_cycle{cyc}"
-            pos = clean_position(raw)
+            row = dict(sheet=sheet, column=int(col), cycle=cyc, key=key, fps=fps,
+                       n_frames=int(np.isfinite(raw).sum()), r_assigned=sc.get(cyc, np.nan),
+                       best_match=best, r_best=sc.get(best, np.nan),
+                       **{f"r_c{k}": v for k, v in sc.items()})
+            if key is None or C.read_trace(key, "pupil")[0] is None:
+                row["status"] = "skipped: cycle not on site"
+            elif dlc_exists(key):
+                row["status"] = "skipped: DLC eye motion already on site"
+            else:
+                row["status"] = "ok"
+            pos = clean_position(raw, fps)
             spd = np.abs(np.diff(pos, prepend=np.nan))
             z = robust_z(spd)
-            t = np.arange(len(raw)) / FPS
-            pd.DataFrame(dict(time=np.round(t, 3), pos_px_raw=raw, pos_px_clean=pos,
-                              speed_px_per_frame=spd, eye_speed=z)).to_csv(
-                OUT / f"{key}_eyemotion_perframe.csv", index=False, float_format="%.5g")
-            qc_plot(key, t, raw, pos, spd, z, OUT / "qc" / f"{key}.png")
-            row.update(key=key, status="ok", frac_valid=float(np.isfinite(z).mean()),
-                       median_speed_px_s=float(np.nanmedian(spd) * FPS))
+            row.update(frac_valid=float(np.isfinite(z).mean()),
+                       median_speed_px_s=float(np.nanmedian(spd) * fps))
+            name = key or f"{sheet}_col{col}"
+            if row["status"] == "ok":
+                t = np.arange(len(raw)) / fps
+                pd.DataFrame(dict(time=np.round(t, 4), pos_px_raw=raw, pos_px_clean=pos,
+                                  speed_px_per_frame=spd, eye_speed=z)).to_csv(
+                    out / f"{key}_eyemotion_perframe.csv", index=False, float_format="%.5g")
+                qc_plot(key, t, raw, pos, spd, z, out / "qc" / f"{name}.png", fps)
             rows.append(row)
     m = pd.DataFrame(rows)
-    m.to_csv(OUT / "mapping.csv", index=False)
-    pd.set_option("display.width", 220)
-    print(m[["sheet", "column", "cycle", "n_frames", "r_assigned", "best_match", "r_best",
+    m.to_csv(out / "mapping.csv", index=False)
+    pd.set_option("display.width", 240)
+    print(m[["sheet", "cycle", "fps", "n_frames", "r_assigned", "best_match", "r_best",
              "frac_valid", "median_speed_px_s", "status"]].round(2).to_string(index=False))
-    print("->", OUT)
+    print("->", out)
 
 
 if __name__ == "__main__":
