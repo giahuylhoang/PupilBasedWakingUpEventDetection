@@ -99,6 +99,11 @@ _LABEL_SETS = {
     "corrected": dict(labels="labels_corrected_2026-10-01", pred="labels_predicted_2026-10-01_v3",
                       ml="RESULTS_state_ml_2026-10-01_v3", out="RESULTS_figures_prelim_2026-10-01_v3",
                       stamp="v3, pattern-2 label corrections NOT YET REVIEWED"),
+    # Florence's 2026-10-07/08 pass: all KD + scramble labelled, GCaMP8m re-labelled
+    # (REM added). Manual labels only; ML predictions not used with this set.
+    "relabel_2026-10-08": dict(labels="labels_bucket_2026-10-08_1456", pred="labels_predicted_2026-10-01",
+                               ml="RESULTS_state_ml_2026-10-01", out="RESULTS_figures_prelim_2026-10-08_relabel",
+                               stamp="labels 2026-10-08 (Florence re-label)"),
 }
 if LABEL_SET not in _LABEL_SETS:
     raise ValueError(f"PRELIM_LABEL_SET must be one of {sorted(_LABEL_SETS)}, got {LABEL_SET!r}")

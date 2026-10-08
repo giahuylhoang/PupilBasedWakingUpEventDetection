@@ -60,7 +60,8 @@ def main():
     ap.add_argument("--group", default="WT")
     a = ap.parse_args()
     C.set_label_mode("manual")
-    out = C.ROOT / "data" / "RESULTS_wake_arousal_explore_2026-10-02" / a.group / "w2n_vs_n2w"
+    sub = "w2n_vs_n2w" if C.LABEL_SET == "original" else f"w2n_vs_n2w__{C.LABEL_SET}"
+    out = C.ROOT / "data" / "RESULTS_wake_arousal_explore_2026-10-02" / a.group / sub
     out.mkdir(parents=True, exist_ok=True)
 
     keys = C.keys_for([a.group])
