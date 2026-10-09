@@ -30,16 +30,34 @@ from scipy import stats
 sys.path.insert(0, str(Path(__file__).resolve().parent / "figs_prelim"))
 import common as C  # noqa: E402
 
-OUT = C.ROOT / "data" / "RESULTS_kd_scr_prebaseline_2026-10-09"
-WIN = (-5.0, 15.0)
+import argparse  # noqa: E402
+
+ap = argparse.ArgumentParser()
+ap.add_argument("--pre", type=float, nargs=2, default=[-5.0, 0.0], help="baseline window (s)")
+ap.add_argument("--stat", choices=["mean", "median"], default="mean", help="baseline statistic")
+ap.add_argument("--view", type=float, nargs=2, default=[-5.0, 15.0], help="plotted window (s)")
+ap.add_argument("--signal", choices=["art", "ca"], default="art")
+ARGS = ap.parse_args()
+PRE_WIN, WIN = tuple(ARGS.pre), tuple(ARGS.view)
+_base = C.ROOT / "data" / "RESULTS_kd_scr_prebaseline_2026-10-09"
+OUT = _base if (PRE_WIN, ARGS.stat, WIN) == ((-5.0, 0.0), "mean", (-5.0, 15.0)) else \
+    _base / f"pre{ARGS.stat}_{PRE_WIN[0]:g}_{PRE_WIN[1]:g}__view_{WIN[0]:g}_{WIN[1]:g}"
+if ARGS.signal != "art":
+    OUT = OUT / ARGS.signal
+SIG = ARGS.signal
+Q = {"art": "ΔD/D_pre", "ca": "ΔF/F_pre"}[SIG]                 # plotted quantity
+SIGNAME = {"art": "arteriole", "ca": "Ca²⁺"}[SIG]
+VAR = {"art": "D", "ca": "F"}[SIG]
+BASE_LABEL = f"{ARGS.stat} {PRE_WIN[0]:g}…{PRE_WIN[1]:g} s"
 GROUPS = ("SCR", "KD")
 
 
 def epochs(ev):
     """Per event, two versions of the arteriole response on the epoch grid."""
-    rg, Y = C.epochs_for(ev, "art", baseline=False)        # Y = D/D_median - 1
-    pre = (rg >= C.BASE_WIN[0]) & (rg < C.BASE_WIN[1])
-    ypre = np.nanmean(Y[:, pre], axis=1, keepdims=True)
+    rg, Y = C.epochs_for(ev, SIG, baseline=False)          # Y = X/X_median - 1 (X = D or F)
+    pre = (rg >= PRE_WIN[0]) & (rg < PRE_WIN[1])
+    f = np.nanmedian if ARGS.stat == "median" else np.nanmean
+    ypre = f(Y[:, pre], axis=1, keepdims=True)
     pre_norm = (Y - ypre) / (1 + ypre)                       # (D - D_pre) / D_pre
     med_norm = Y - ypre                                      # (D - D_pre) / D_median (old)
     return rg, pre_norm, med_norm, (1 + ypre[:, 0])          # last = D_pre / D_median
@@ -112,7 +130,7 @@ def main():
     lo, hi = min(ylim), max(ylim)
 
     ncol = max(len(tr["SCR"]), len(tr["KD"]))
-    fig, axs = plt.subplots(2, ncol, figsize=(2.9 * ncol, 6.4), sharey=True, sharex=True,
+    fig, axs = plt.subplots(2, ncol, figsize=((2.9 if WIN[1] - WIN[0] <= 30 else 4.2) * ncol, 6.4), sharey=True, sharex=True,
                             constrained_layout=True)
     for row, g in enumerate(GROUPS):
         for j in range(ncol):
@@ -122,7 +140,7 @@ def main():
                 ax.axis("off"); continue
             X = tr[g][days[j]]
             mu = 100 * np.nanmean(X, 0); se = 100 * np.nanstd(X, 0) / np.sqrt(np.isfinite(X).sum(0))
-            ax.axvspan(*C.BASE_WIN, color="0.9", zorder=0); ax.axvspan(*C.RESP_WIN, color="#FFF3E0", zorder=0)
+            ax.axvspan(*PRE_WIN, color="0.9", zorder=0); ax.axvspan(*C.RESP_WIN, color="#FFF3E0", zorder=0)
             ax.plot(t, mu, color=C.GROUP_COL[g], lw=1.8)
             ax.fill_between(t, mu - se, mu + se, color=C.GROUP_COL[g], alpha=0.25, lw=0)
             ax.axhline(0, color="0.5", lw=0.6); ax.axvline(0, color="k", lw=0.6)
@@ -131,26 +149,26 @@ def main():
                          fontsize=9)
             ax.set_ylim(lo, hi)
             if j == 0:
-                ax.set_ylabel(f"{C.GROUP_LABEL[g]}\nΔD/D_pre (%)")
+                ax.set_ylabel(f"{C.GROUP_LABEL[g]}\n{Q} (%)")
             if row == 1:
                 ax.set_xlabel("time from pupil onset (s)")
-    fig.suptitle("Wake-up arteriole response per recording day, ΔD/D_pre = (D − D_pre)/D_pre, D_pre = mean −5…0 s; "
+    fig.suptitle(f"Wake-up {SIGNAME} response per recording day, {Q} = ({VAR} − {VAR}_pre)/{VAR}_pre, {VAR}_pre = {BASE_LABEL}; "
                  "mean ± SEM across events (final labels 2026-10-09)", fontsize=10, x=0.01, ha="left")
     fig.savefig(OUT / "figures" / "A_per_day.png", dpi=150)
     plt.close(fig)
 
     # group mean of day means, and difference
     G = {g: np.array([100 * np.nanmean(X, 0) for X in tr[g].values()]) for g in GROUPS}
-    fig, axs = plt.subplots(1, 2, figsize=(10, 4.6), constrained_layout=True)
+    fig, axs = plt.subplots(1, 2, figsize=(10 if WIN[1] - WIN[0] <= 30 else 15, 4.6), constrained_layout=True)
     ax = axs[0]
     for g in GROUPS:
         mu = G[g].mean(0); se = G[g].std(0, ddof=1) / np.sqrt(len(G[g]))
         ax.plot(t, mu, color=C.GROUP_COL[g], lw=2, label=f"{C.GROUP_LABEL[g]} ({len(G[g])} days, "
                 f"{sum(len(X) for X in tr[g].values())} events)")
         ax.fill_between(t, mu - se, mu + se, color=C.GROUP_COL[g], alpha=0.22, lw=0)
-    ax.axvspan(*C.BASE_WIN, color="0.9", zorder=0); ax.axvspan(*C.RESP_WIN, color="#FFF3E0", zorder=0)
+    ax.axvspan(*PRE_WIN, color="0.9", zorder=0); ax.axvspan(*C.RESP_WIN, color="#FFF3E0", zorder=0)
     ax.axhline(0, color="0.5", lw=0.6); ax.axvline(0, color="k", lw=0.6)
-    ax.set_xlabel("time from pupil onset (s)"); ax.set_ylabel("ΔD/D_pre (%)")
+    ax.set_xlabel("time from pupil onset (s)"); ax.set_ylabel(f"{Q} (%)")
     ax.set_title("group mean ± SEM across days", fontsize=10); ax.legend(fontsize=8, frameon=False, loc="upper left")
     ax = axs[1]
     a, b = G["SCR"], G["KD"]
@@ -161,13 +179,13 @@ def main():
     ci = stats.t.ppf(0.975, dof) * se
     ax.plot(t, diff, color="k", lw=2)
     ax.fill_between(t, diff - ci, diff + ci, color="0.6", alpha=0.35, lw=0, label="95% CI (Welch, per time point)")
-    ax.axvspan(*C.BASE_WIN, color="0.9", zorder=0); ax.axvspan(*C.RESP_WIN, color="#FFF3E0", zorder=0)
+    ax.axvspan(*PRE_WIN, color="0.9", zorder=0); ax.axvspan(*C.RESP_WIN, color="#FFF3E0", zorder=0)
     ax.axhline(0, color="0.5", lw=0.6); ax.axvline(0, color="k", lw=0.6)
     r = T[T.metric == "mean_pre"].iloc[0]
     ax.set_title(f"KD − scramble   (mean 0–15 s: Welch p = {r.welch_p:.2f}, g = {r.hedges_g:+.2f})", fontsize=10)
-    ax.set_xlabel("time from pupil onset (s)"); ax.set_ylabel("difference in ΔD/D_pre (%)")
+    ax.set_xlabel("time from pupil onset (s)"); ax.set_ylabel(f"difference in {Q} (%)")
     ax.legend(fontsize=8, frameon=False, loc="upper left")
-    fig.suptitle("NREM → wake arteriole, scramble vs IP3R2 KD (unit = recording day)", fontsize=11, x=0.01, ha="left")
+    fig.suptitle(f"NREM → wake {SIGNAME}, scramble vs IP3R2 KD (unit = recording day; {VAR}_pre = {BASE_LABEL})", fontsize=11, x=0.01, ha="left")
     fig.savefig(OUT / "figures" / "B_group.png", dpi=150)
     plt.close(fig)
 
