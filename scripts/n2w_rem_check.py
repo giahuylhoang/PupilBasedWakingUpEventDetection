@@ -28,8 +28,10 @@ sys.path.insert(0, str(Path(__file__).resolve().parent / "figs_prelim"))
 import common as C  # noqa: E402
 
 OLD = C.ROOT / "data" / "labels_snapshot_2026-10-01"
-NEW = C.ROOT / "data" / "labels_bucket_2026-10-08_1456"
-OUT = C.ROOT / "data" / "RESULTS_wake_arousal_explore_2026-10-02" / "WT" / "rem_check_2026-10-08"
+import os  # noqa: E402
+NEW = C.ROOT / "data" / os.environ.get("REM_CHECK_NEW", "labels_bucket_2026-10-08_1456")
+_TAG = {"labels_bucket_2026-10-08_1456": "2026-10-08"}.get(NEW.name, NEW.name.replace("labels_bucket_", ""))
+OUT = C.ROOT / "data" / "RESULTS_wake_arousal_explore_2026-10-02" / "WT" / f"rem_check_{_TAG}"
 PRE, POST = (-30.0, -10.0), (10.0, 40.0)
 REM_LOOKBACK = 180.0
 
@@ -101,7 +103,7 @@ def main():
     fig, ax = plt.subplots(figsize=(11, 4.6), constrained_layout=True)
     x = np.arange(len(t))
     for j, (col, ncol, lab, c) in enumerate([("old_median", "old_n", "old labels (10-01)", "0.6"),
-                                             ("new_median", "new_n", "new labels (10-08)", "#1E88E5"),
+                                             ("new_median", "new_n", f"new labels ({_TAG})", "#1E88E5"),
                                              ("new_noREM_median", "new_noREM_n",
                                               f"new labels, no REM in prior {REM_LOOKBACK:.0f} s", "#0D47A1")]):
         ax.bar(x + (j - 1) * 0.27, t[col], 0.27, color=c, label=lab)

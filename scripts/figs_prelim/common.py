@@ -104,6 +104,10 @@ _LABEL_SETS = {
     "relabel_2026-10-08": dict(labels="labels_bucket_2026-10-08_1456", pred="labels_predicted_2026-10-01",
                                ml="RESULTS_state_ml_2026-10-01", out="RESULTS_figures_prelim_2026-10-08_relabel",
                                stamp="labels 2026-10-08 (Florence re-label)"),
+    # final pass on GCaMP8m 2025.12.18 / 2026.03.06 (detailed MA labelling), 2026-10-09
+    "relabel_2026-10-09": dict(labels="labels_bucket_2026-10-09_1022", pred="labels_predicted_2026-10-01",
+                               ml="RESULTS_state_ml_2026-10-01", out="RESULTS_figures_prelim_2026-10-09_relabel",
+                               stamp="labels 2026-10-09 (final re-label)"),
 }
 if LABEL_SET not in _LABEL_SETS:
     raise ValueError(f"PRELIM_LABEL_SET must be one of {sorted(_LABEL_SETS)}, got {LABEL_SET!r}")

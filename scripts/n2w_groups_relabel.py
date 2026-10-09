@@ -32,7 +32,7 @@ from scipy import stats
 sys.path.insert(0, str(Path(__file__).resolve().parent / "figs_prelim"))
 import common as C  # noqa: E402
 
-OUT = C.ROOT / "data" / "RESULTS_groups_relabel_2026-10-08"
+OUT = C.ROOT / "data" / ("RESULTS_groups_relabel_" + C.LABEL_SET.split("_", 1)[1])   # one folder per label set
 GROUPS = ("WT", "SCR", "KD", "NE")
 N_SURR = 200
 RNG = np.random.default_rng(20261008)
@@ -173,7 +173,7 @@ def main():
             if r.group == "WT" and r.date.startswith("2026.03.03"):
                 ax.annotate("03.03", (r.date_dt, getattr(r, mtr)), fontsize=7, xytext=(4, -8),
                             textcoords="offset points")
-    fig.suptitle("Wake-up arteriole response by recording date (all groups, 2026-10-08 labels; dot size = events)",
+    fig.suptitle(f"Wake-up arteriole response by recording date (all groups, labels {C.LABEL_SET}; dot size = events)",
                  fontsize=11, x=0.01, ha="left")
     fig.savefig(OUT / "figures" / "chronology_n2w.png", dpi=150)
     plt.close(fig)

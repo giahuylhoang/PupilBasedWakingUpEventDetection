@@ -22,7 +22,7 @@ ROOT = Path(__file__).resolve().parents[1]
 D = ROOT / "data"
 OUT = D / "presentation_materials" / "2026-10-09_meeting" / "Update_2026_10_09.pptx"
 WT = D / "RESULTS_wake_arousal_explore_2026-10-02" / "WT"
-GR = D / "RESULTS_groups_relabel_2026-10-08"
+GR = D / "RESULTS_groups_relabel_2026-10-09"   # final labels
 
 GREEN, GREY, BLUE, RED, DARK = "2E7D32", "757575", "0D47A1", "C62828", "212121"
 
@@ -126,7 +126,7 @@ def main():
     text(s, 0.8, 4.2, 11.5, 3.0, [
         ("Three answers", dict(bold=True, size=20)),
         "1.  Not arousal strength: pupil rise does not predict the arteriole response",
-        "2.  Part was REM: wake-ups from REM constrict, and were labelled as NREM wake-ups",
+        "2.  Some was REM: wake-ups from REM constrict; two newer days still constrict without them",
         "3.  The rest follows recording date: wake-up dilation fades from 2023 to 2026, across all groups",
         ("With full manual labels, KD = scramble at wake-up", dict(bold=True, color=BLUE)),
     ], size=18)
@@ -185,15 +185,16 @@ def main():
 
     # 5 relabel
     s = new()
-    header(s, "Labels were updated on 2026-10-08",
-           "All KD and scramble cycles now have manual labels; GCaMP8m cycles re-checked for REM",
-           "data/RESULTS_label_check_labels_bucket_2026-10-08_1456/  (old labels kept unchanged)")
+    header(s, "Labels were updated on 2026-10-08, final pass 2026-10-09",
+           "All KD and scramble cycles now have manual labels; GCaMP8m cycles re-checked for REM and micro-arousals",
+           "data/labels_bucket_2026-10-08_1456/, labels_bucket_2026-10-09_1022/  (old labels kept unchanged)")
     table(s, 0.6, 1.7, 7.6, [
         ["", "Before (10-01)", "Now (10-08)"],
         ["KD cycles with manual labels", "7 of 19 (rest predicted)", "19 of 19"],
         ["Scramble cycles", "16 of 16", "16 of 16 (no edits)"],
         ["KD bins changed", "—", "346 (2023.08.25/26 mostly)"],
         ["GCaMP8m bins changed", "—", "343, incl. 75 NREM → REM"],
+        ["GCaMP8m final pass (10-09)", "—", "+219 bins, mostly NREM → Awake"],
         ["2023 RSC and GRAB-NE", "—", "unchanged"],
     ], col_w=[3.2, 2.2, 2.2], size=13)
     text(s, 8.6, 1.8, 4.3, 4.4, [
@@ -202,34 +203,34 @@ def main():
         "Weakest on KD 2023.08.26 (degraded pupil video); c6 only 37% labelled",
         "Our classifier vs the new KD labels: κ = 0.63, so earlier predicted labels were reasonable",
     ], size=15)
-    takeaway(s, "Everything from here on uses the 2026-10-08 labels.")
+    takeaway(s, "Everything from here on uses the final labels of 2026-10-09.")
 
     # 6 REM
     s = new()
-    header(s, "2. Part of the constriction was REM → wake",
+    header(s, "2. REM → wake explains some constrictions, not all",
            "Wake-up change per day with old labels, new labels, and new labels excluding any REM in the 3 min before",
-           "data/RESULTS_wake_arousal_explore_2026-10-02/WT/rem_check_2026-10-08/")
-    picture(s, WT / "rem_check_2026-10-08" / "per_day_old_vs_new.png", 0.4, 1.5, 8.4, 3.6)
+           "data/RESULTS_wake_arousal_explore_2026-10-02/WT/rem_check_2026-10-09_1022/")
+    picture(s, WT / "rem_check_2026-10-09_1022" / "per_day_old_vs_new.png", 0.4, 1.5, 8.4, 3.6)
     text(s, 9.0, 1.6, 4.0, 4.6, [
-        ("23 old wake-ups dropped out", dict(bold=True)),
-        "- 8 are now REM → wake; each constricted 4–9%",
-        "- 10: NREM before waking now too short",
-        "- 5: wake now too short (micro-arousal)", "",
-        ("2025.12.18: constriction gone", dict(bold=True)),
-        ("2026.03.03: still constricts (6 events)", dict(bold=True)),
+        ("REM → wake events constrict", dict(bold=True)),
+        "- Old wake-ups now labelled REM → wake had constricted 4–9%", "",
+        ("Final labels, no REM in the 3 min before", dict(bold=True)),
+        "- 2025.12.18: −2.2% (15 events)",
+        "- 2026.03.03: −2.5% (6 events)",
+        "- 2026.03.06: +0.2% (13 events)",
     ], size=14)
     text(s, 0.6, 5.3, 8.2, 0.9, "Caution: REM was re-labelled with the arteriole visible. New REM bins: pupil small (as NREM), "
          "whisker higher (twitches), arteriole +6.8%. Partly independent, partly circular.", size=13, color=GREY)
-    takeaway(s, "REM → wake events constrict because REM dilates. They must be kept out of NREM → wake.")
+    takeaway(s, "REM → wake must be kept apart, but 2025.12.18 and 2026.03.03 still constrict without it.")
 
     # 7 chronology
     s = new()
     header(s, "3. Wake-up dilation fades with recording date, across all groups",
            "Each dot = one recording day, wake-up response minus random NREM moments of the same day (21 days, 4 groups)",
-           "data/RESULTS_groups_relabel_2026-10-08/figures/chronology_n2w.png, chronology_tests.csv")
+           "data/RESULTS_groups_relabel_2026-10-09/figures/chronology_n2w.png, chronology_tests.csv")
     picture(s, GR / "figures" / "chronology_n2w.png", 0.4, 1.5, 12.5, 4.0)
     text(s, 0.6, 5.55, 12.1, 0.8, [
-        "Rank correlation with date: ρ = −0.52 (p = 0.015); without KD ρ = −0.61 (p = 0.016).   "
+        "Rank correlation with date (AUC): ρ = −0.52 (p = 0.015); without KD ρ = −0.61 (p = 0.016); level change ρ = −0.46 (p = 0.035).   "
         "Before Mar 2024: 9 / 10 days dilate.  After: 4 / 11 (cut-off chosen after looking).",
     ], size=15)
     takeaway(s, "Matches the protocol changes (habituation, rig, dye), but those all changed together, so the cause is open.")
@@ -238,19 +239,19 @@ def main():
     s = new()
     header(s, "No group shows a clear wake-up dilation once all days are included",
            "Day-level response minus random NREM moments; p = one-sample t vs 0",
-           "data/RESULTS_groups_relabel_2026-10-08/response_vs_zero.csv")
+           "data/RESULTS_groups_relabel_2026-10-09/response_vs_zero.csv")
     picture(s, GR / "figures" / "groups_summary.png", 0.4, 1.5, 12.5, 3.9)
     table(s, 0.6, 5.45, 12.1, [
         ["Wake-up", "WT (8 days)", "Scramble (4)", "KD (6)", "GRAB-NE (3)"],
         ["Arteriole dilates (AUC), days positive", "6 / 8, p = 0.13", "2 / 4, p = 0.58", "4 / 6, p = 0.64", "1 / 3, p = 0.95"],
-        ["Ca²⁺ rises, days positive", "8 / 8, p = 0.003", "4 / 4, p = 0.17", "5 / 6, p = 0.06", "—"],
+        ["Ca²⁺ rises, days positive", "8 / 8, p = 0.004", "4 / 4, p = 0.17", "5 / 6, p = 0.06", "—"],
     ], col_w=[4.1, 2.0, 2.0, 2.0, 2.0], size=12, row_h=0.3)
 
     # 9 KD vs SCR
     s = new()
     header(s, "KD vs scramble: no difference at wake-up",
            "Day-level values, Welch t-test (unit = recording day). New labels.",
-           "data/RESULTS_groups_relabel_2026-10-08/kd_vs_scr.csv;  RESULTS_figures_prelim_2026-10-08_relabel/tables/")
+           "data/RESULTS_groups_relabel_2026-10-09/kd_vs_scr.csv;  RESULTS_figures_prelim_2026-10-08_relabel/tables/")
     table(s, 0.6, 1.7, 12.1, [
         ["", "Scramble (4 days)", "KD (6 days)", "p", "Before (10-01 labels)"],
         ["Wake-up arteriole AUC", "+0.09", "+0.04", "0.77", "n.s."],
@@ -275,8 +276,8 @@ def main():
         "- Barrel cortex constricts at waking (Tim; published Fig 2). File names say RSC; needs confirming.",
         ("What changed over time?", dict(bold=True)),
         "- Habituation protocol, rig sound insulation, Texas Red 15 → 20 mg/mL, more REM. Which can we date?",
-        ("Is 2026.03.03 excluded or reported?", dict(bold=True)),
-        "- Only day still clearly constricting after REM fix (6 events), but it fits the date trend.",
+        ("Exclude or report the constricting days?", dict(bold=True)),
+        "- 2025.12.18 and 2026.03.03 still constrict after REM is excluded, but both fit the date trend.",
         ("How is vessel size measured?", dict(bold=True)),
         "- If it counts bright pixels, brightness and red blood cells could mimic constriction. "
         "Raw red-channel images for 03.03 and one 2023 day would let us measure width directly.",
