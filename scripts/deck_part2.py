@@ -24,6 +24,11 @@ METHOD = ("NREM → wake from the final labels (2026-10-09), t0 = pupil onset, e
           "D = √(vessel area), D0 = median of the 20 s before pupil onset; ΔF/F0 the same. p values: recording day = unit.")
 
 
+METHOD_MAX = ("NREM → wake from the final labels (2026-10-09), every event kept. Ca²⁺ and arteriole t0 = best onset "
+              "in −5…+20 s of pupil onset (max integrated (X − X0)/X0 over 10 s, X0 = 5 s mean); then D0 / F0 = median "
+              "of the 20 s before that onset. LME: events, recording day as random effect.")
+
+
 def p_txt(p):
     return "p < 0.001" if p < 0.001 else f"p = {p:.3f}" if p < 0.01 else f"p = {p:.2f}"
 
@@ -95,6 +100,40 @@ def main():
          f"{T.loc['art_peak', 'kd_mean']:.1f}% ({p_txt(T.loc['art_peak', 'welch_p'])}).   "
          f"Welch t on day means; Mann–Whitney agrees.", size=14)
     takeaway(s, "With 4 vs 6 days, the measured differences are small compared with day-to-day spread.", y=6.3)
+
+    # 3b max-response onset: PSTH
+    T2 = pd.read_csv(RES / "tests_maxonset.csv").set_index("metric")
+    e2 = pd.read_csv(RES / "events_maxonset.csv")
+    sh = e2.groupby("group")[["ca_shift", "art_shift"]].median()
+    s = new()
+    header(s, "Aligning each response to its best onset: still no group difference",
+           "Ca²⁺ and arteriole each at the onset that maximises its next 10 s; pupil at pupil onset. Day mean ± SEM.",
+           METHOD_MAX)
+    picture(s, FIG / "1b_psth_maxonset.png", 0.3, 1.6, 12.7, 3.7)
+    text(s, 0.6, 5.4, 12.1, 0.8, [
+        f"Median onset shift: Ca²⁺ +{sh.loc['SCR', 'ca_shift']:.1f} s (scramble) / +{sh.loc['KD', 'ca_shift']:.1f} s (KD); "
+        f"arteriole +{sh.loc['SCR', 'art_shift']:.1f} s / +{sh.loc['KD', 'art_shift']:.1f} s.   Mean 0–15 s: Ca²⁺ "
+        f"{T2.loc['ca_mean', 'scr_mean']:+.1f}% vs {T2.loc['ca_mean', 'kd_mean']:+.1f}%; arteriole "
+        f"{T2.loc['art_mean', 'scr_mean']:+.1f}% vs {T2.loc['art_mean', 'kd_mean']:+.1f}%.",
+        (f"Picking the best onset builds in a rise after t = 0 and a dip just before it; at pupil onset the arteriole "
+         f"is {T.loc['art_mean', 'scr_mean']:+.1f}% vs {T.loc['art_mean', 'kd_mean']:+.1f}%.", dict(color=GREY, size=13)),
+    ], size=15)
+    takeaway(s, "Even when each response is allowed its largest value, KD and scramble overlap.", y=6.35)
+
+    # 3c max-response onset: summary + LME
+    s = new()
+    header(s, "Mixed model: no significant KD effect on any measure",
+           "Best-onset alignment. LME per measure: value ~ group + (1 | recording day), events as observations.",
+           METHOD_MAX)
+    picture(s, FIG / "3b_summary_maxonset.png", 0.3, 1.5, 12.7, 4.2)
+    parts = []
+    for c, lab in (("ca_peak", "Ca²⁺ peak"), ("ca_auc", "Ca²⁺ AUC"), ("art_peak", "arteriole peak"),
+                   ("art_auc", "arteriole AUC")):
+        r = T2.loc[c]
+        parts.append(f"{lab} {p_txt(r.welch_p)} (days, LME degenerate)" if r.lme_degenerate
+                     else f"{lab} LME {p_txt(r.lme_p)}")
+    text(s, 0.6, 5.75, 12.1, 0.5, ";   ".join(parts) + ".", size=14)
+    takeaway(s, "No measure differs between KD and scramble, by mixed model or by day means.", y=6.3)
 
     # 4 per day
     s = new()

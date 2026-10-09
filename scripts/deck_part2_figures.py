@@ -10,10 +10,17 @@ Same events and normalisation as part 1 (deck_part1_figures.py):
 Plot window -30..60 s. Statistics: recording day = unit (Welch t on day means,
 Mann-Whitney alongside). Rank correlations are within day, events as units.
 
+Max-response onset variant (1b, 3b): Ca2+ and arteriole each re-aligned to the onset
+in -5..+20 s of pupil onset that maximises the integrated (X - X0)/X0 over the
+next 10 s (X0 = mean of the 5 s before); no event rejected; pupil unchanged;
+then the same -20..0 s median baseline relative to the new onset. Its summary
+adds an LME (metric ~ KD + (1 | recording day), events).
+
 Output: data/RESULTS_deck_part2_2026-10-09/
   figures/1_psth.png  2_heatmaps.png  3_summary.png  4_per_day.png
-          5_coupling.png  6_arousal.png
-  day_values.csv  tests.csv  coupling_arousal.csv  events.csv
+          5_coupling.png  6_arousal.png  1b_psth_maxonset.png  3b_summary_maxonset.png
+  day_values[_maxonset].csv  tests[_maxonset].csv  coupling_arousal.csv
+  events[_maxonset].csv
 """
 from __future__ import annotations
 
@@ -70,6 +77,11 @@ def load():
             sg["pupil"] = (t, y)
     E = {s: P1.epoch_matrix(ev, s) for s in SIGS}
     E["art_s"] = smooth3(E["art"])
+    add_metrics(ev, E)
+    return ev, E
+
+
+def add_metrics(ev, E):
     m = (RG >= RESP[0]) & (RG <= RESP[1])
     with np.errstate(all="ignore"):
         ev["pupil_rise"] = np.nanmax(E["pupil"][:, m], 1)
@@ -79,7 +91,54 @@ def load():
             Y = np.where(np.isfinite(E[s][:, m]), E[s][:, m], 0.0)
             ok = np.isfinite(E[s][:, m]).mean(1) > 0.8
             ev[f"{s}_auc"] = np.where(ok, np.trapezoid(Y, RG[m], axis=1), np.nan)
-    return ev, E
+
+
+# ----------------------------------------------------------------- max-response onset
+SCAN = (-5.0, 20.0)      # candidate onsets relative to pupil onset (s)
+SCAN_BASE, SCAN_DUR, SCAN_FS = 5.0, 10.0, 10.0
+
+
+def best_onset(t, y, t0):
+    """Onset in t0+SCAN maximising sum over (0, SCAN_DUR] of (y - y0)/y0 * dt,
+    y0 = mean of the SCAN_BASE s before the onset. Returns offset from t0 (s)."""
+    fin = np.isfinite(y)
+    g = np.arange(t0 + SCAN[0] - SCAN_BASE, t0 + SCAN[1] + SCAN_DUR + 1e-9, 1 / SCAN_FS)
+    v = np.interp(g, t[fin], y[fin], left=np.nan, right=np.nan)
+    if np.isnan(v).mean() > 0.2:
+        return np.nan
+    v = pd.Series(v).interpolate(limit_direction="both").to_numpy()
+    nb, nd = int(SCAN_BASE * SCAN_FS), int(SCAN_DUR * SCAN_FS)
+    cs = np.concatenate([[0.0], np.cumsum(v)])
+    cand = np.arange(nb, len(v) - nd)                         # index of onset sample
+    y0 = (cs[cand + 1] - cs[cand + 1 - nb]) / nb              # mean of (c-nb, c]
+    post = (cs[cand + 1 + nd] - cs[cand + 1]) / nd            # mean of (c, c+nd]
+    roc = (post - y0) / y0 * SCAN_DUR
+    ok = np.isfinite(roc) & (np.abs(y0) > 1e-12)
+    if not ok.any():
+        return np.nan
+    i = cand[ok][np.argmax(roc[ok])]
+    return g[i] - t0
+
+
+def max_onset_epochs(ev, E):
+    """Ca2+ and arteriole each re-aligned to their own best onset; pupil unchanged."""
+    E2, sh = {"pupil": E["pupil"]}, {}
+    for s in ("ca", "art"):
+        off = np.full(len(ev), np.nan)
+        for i, r in enumerate(ev.itertuples()):
+            sg = P1.signals(r.key)
+            if s in sg:
+                off[i] = best_onset(sg[s][0], sg[s][1], r.t0)
+        e2 = ev.copy()
+        e2["t0"] = ev["t0"] + np.nan_to_num(off)
+        M = P1.epoch_matrix(e2, s)
+        M[~np.isfinite(off)] = np.nan
+        E2[s], sh[s] = M, off
+    E2["art_s"] = smooth3(E2["art"])
+    ev2 = ev[["type", "key", "mouse", "t0", "group", "day"]].copy()
+    ev2["ca_shift"], ev2["art_shift"] = sh["ca"], sh["art"]
+    add_metrics(ev2, E2)
+    return ev2, E2
 
 
 def day_order(ev, g):
@@ -123,7 +182,7 @@ def pfmt(p):
 
 
 # ----------------------------------------------------------------- 1 PSTH
-def fig1_psth(ev, E):
+def fig1_psth(ev, E, name="1_psth.png"):
     fig, axs = plt.subplots(1, 3, figsize=(16, 4.6), constrained_layout=True)
     bars = {"pupil": (1.0, "1 z"), "ca": (20.0, "20%"), "art": (2.0, "2%")}
     for ax, s in zip(axs, SIGS):
@@ -141,7 +200,7 @@ def fig1_psth(ev, E):
         dy, lab = bars[s]
         scale_bar(ax, 10.0, dy, lab)
     axs[0].legend(frameon=False, fontsize=10, loc="upper right")
-    fig.savefig(FIG / "1_psth.png", dpi=170)
+    fig.savefig(FIG / name, dpi=170)
     plt.close(fig)
 
 
@@ -200,24 +259,32 @@ METRICS = [("ca_peak", "Ca²⁺ peak", "Peak ΔF/F0 (%)"), ("ca_auc", "Ca²⁺ A
            ("art_peak", "Arteriole peak", "Peak ΔD/D0 (%)"), ("art_auc", "Arteriole AUC", "AUC 0–15 s (%·s)")]
 
 
-def tests(ev):
+def tests(ev, tag=""):
     D = ev.groupby(["group", "day"]).agg(
         n=("t0", "size"), **{c: (c, "mean") for c in
                             ["pupil_rise", "ca_peak", "ca_auc", "ca_mean", "art_peak", "art_auc", "art_mean"]}
     ).reset_index()
-    D.to_csv(OUT / "day_values.csv", index=False)
+    D.to_csv(OUT / f"day_values{tag}.csv", index=False)
+    ev = ev.assign(kd=(ev.group == "KD").astype(int))
     rows = []
     for c in ["pupil_rise", "ca_peak", "ca_auc", "ca_mean", "art_peak", "art_auc", "art_mean"]:
         a = D.loc[D.group == "SCR", c].to_numpy(); b = D.loc[D.group == "KD", c].to_numpy()
         r = C.group_test(a, b)
+        L = C.lmm(ev, c, "kd", group="day")                  # c ~ KD + (1 | recording day), events
+        lr = L[L.term == "kd"].iloc[0] if L is not None and "kd" in set(L.term) else None
         rows.append(dict(metric=c, scr_days=len(a), kd_days=len(b), scr_mean=a.mean(), kd_mean=b.mean(),
-                         hedges_g=r["hedges_g"], welch_p=r["welch_p"], mw_p=r["mw_p"]))
+                         hedges_g=r["hedges_g"], welch_p=r["welch_p"], mw_p=r["mw_p"],
+                         lme_kd_minus_scr=float(lr["Coef."]) if lr is not None else np.nan,
+                         lme_p=float(lr["P>|z|"]) if lr is not None else np.nan,
+                         lme_n_events=int(lr["n_obs"]) if lr is not None else 0,
+                         lme_day_var_over_resid=float(lr["mouse_var_over_resid"]) if lr is not None else np.nan,
+                         lme_degenerate=bool(lr["degenerate_fit"]) if lr is not None else True))
     T = pd.DataFrame(rows)
-    T.to_csv(OUT / "tests.csv", index=False)
+    T.to_csv(OUT / f"tests{tag}.csv", index=False)
     return D, T
 
 
-def fig3_summary(ev, D, T):
+def fig3_summary(ev, D, T, name="3_summary.png", use_lme=False):
     rng = np.random.default_rng(1)
     fig, axs = plt.subplots(1, 4, figsize=(16, 5.2), constrained_layout=True)
     for ax, (c, title, ylab) in zip(axs, METRICS):
@@ -235,15 +302,21 @@ def fig3_summary(ev, D, T):
                        color=[cols[d] for d in dm.index], edgecolor="white", lw=1, zorder=4)
             top.append(np.nanpercentile(e[c], 98))
         ax.axhline(0, color="k", lw=1)
-        p = T.set_index("metric").loc[c, "welch_p"]
+        tr = T.set_index("metric").loc[c]
         y = max(top) * 1.08
         ax.plot([0, 0, 1, 1], [y * 0.97, y, y, y * 0.97], color="k", lw=1.5)
-        ax.text(0.5, y * 1.02, ("ns  " if p >= 0.05 else "*  ") + f"({pfmt(p)})", ha="center", va="bottom", fontsize=11)
-        ax.set_ylim(top=y * 1.15)
+        if use_lme and not tr.lme_degenerate:
+            p, lab = tr.lme_p, f"LME {pfmt(tr.lme_p)}\ndays {pfmt(tr.welch_p)}"
+        elif use_lme:
+            p, lab = tr.welch_p, f"LME degenerate\ndays {pfmt(tr.welch_p)}"
+        else:
+            p, lab = tr.welch_p, f"({pfmt(tr.welch_p)})"
+        ax.text(0.5, y * 1.02, ("ns  " if p >= 0.05 else "*  ") + lab, ha="center", va="bottom", fontsize=11)
+        ax.set_ylim(top=y * (1.25 if use_lme else 1.15))
         ax.set_xticks([0, 1], [GLAB[g] for g in GROUPS], rotation=20)
         ax.set_title(title, fontsize=14, weight="bold")
         ax.set_ylabel(ylab)
-    fig.savefig(FIG / "3_summary.png", dpi=170)
+    fig.savefig(FIG / name, dpi=170)
     plt.close(fig)
 
 
@@ -345,6 +418,14 @@ def main():
     fig2_heatmaps(ev, E)
     fig3_summary(ev, D, T)
     fig4_per_day(ev, E, D)
+    ev2, E2 = max_onset_epochs(ev, E)
+    ev2.to_csv(OUT / "events_maxonset.csv", index=False)
+    D2, T2 = tests(ev2, "_maxonset")
+    fig1_psth(ev2, E2, "1b_psth_maxonset.png")
+    fig3_summary(ev2, D2, T2, "3b_summary_maxonset.png", use_lme=True)
+    print("onset shift (s) vs pupil onset:")
+    print(ev2.groupby("group")[["ca_shift", "art_shift"]].describe().T.round(1).to_string())
+    print(T2.round(4).to_string(index=False))
     R = pd.DataFrame(fig5_coupling(ev) + fig6_arousal(ev, E))
     R.to_csv(OUT / "coupling_arousal.csv", index=False)
     pd.set_option("display.width", 200)
