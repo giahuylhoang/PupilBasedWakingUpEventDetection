@@ -10,9 +10,9 @@ No cycle-median normalisation of the response.
 Events: final labels (run with PRELIM_LABEL_SET=relabel_2026-10-09), manual only, WT.
   NREM->wake  common.response_events type N2W
   REM->wake   scripts/rem_vs_nrem_wake.r2w_events (REM >= 20 s then Awake >= 20 s)
-Eye movement: DLC 2-D eye speed where it exists (GCaMP8m 2026.03.03 / 03.06),
-otherwise Florence's pixel-based 1-D speed (2023 RSC days, 2025.12.18); none for
-2023.07.12. Both robust-z'd within cycle, so only ranks within a day are compared.
+Eye movement: DLC 2-D eye speed only (GCaMP8m 2026.03.03 / 03.06). The pixel-based
+1-D speed was lower in Awake than in NREM on every WT day that has it, so it is
+not treated as eye movement (USE_PIXEL_EYE).
 
 Output: data/RESULTS_deck_part1_2026-10-09/figures/
 """
@@ -41,11 +41,17 @@ VIEW = (-30.0, 60.0)
 FS = 2.0                                     # epoch grid for every signal (Hz)
 RG = np.arange(VIEW[0], VIEW[1] + 1e-9, 1 / FS)
 PIX_EYE = C.ROOT / "data" / "pupil_eye_motion_pixel_control_2026-10-06"
+# Pixel-based 1-D speed is LOWER in Awake than NREM on every WT day that has it
+# (checked 2026-10-09), so it is not used as eye movement. DLC only.
+USE_PIXEL_EYE = False
 COH = {"RSC2023": "WT RSC 2023", "GCaMP8m": "WT GCaMP8m 2025–26"}
 COH_COL = {"RSC2023": "#424242", "GCaMP8m": "#2E7D32"}
 TYPE_COL = {"N2W": "#EF6C00", "R2W": "#6A1B9A"}
 TYPE_NAME = {"N2W": "NREM → wake", "R2W": "REM → wake"}
 SIGS = ("pupil", "eye", "ca", "art")
+# Heatmap only: RSC 2023 has no DLC, so its eye column shows the pixel-based
+# speed (different measure, not used in any statistic).
+EXTRA_SIGS = ("eye_pix",)
 SIG_LAB = {"pupil": "pupil (z)", "eye": "eye movement (z)", "ca": "Ca²⁺ ΔF/F0 (%)", "art": "arteriole ΔD/D0 (%)"}
 TERT = ("low", "mid", "high")
 TERT_COL = ("#90CAF9", "#1E88E5", "#0D47A1")
@@ -75,7 +81,7 @@ def eye_signal(key):
                 y[~d["include"].astype(bool).to_numpy()] = np.nan
             return d["time"].to_numpy(float), y, "DLC"
     p = PIX_EYE / f"{key}_eyemotion_perframe.csv"
-    if p.exists():
+    if USE_PIXEL_EYE and p.exists():
         d = pd.read_csv(p)
         return d["time"].to_numpy(float), d["speed_px_per_frame"].to_numpy(float), "pixel"
     return None
@@ -98,6 +104,11 @@ def signals(key):
         g, v = _bin(e[0], e[1])
         out["eye"] = (g, C._robust_z(v))
         out["eye_src"] = e[2]
+    pp = PIX_EYE / f"{key}_eyemotion_perframe.csv"
+    if pp.exists():
+        d = pd.read_csv(pp)
+        g, v = _bin(d["time"].to_numpy(float), d["speed_px_per_frame"].to_numpy(float))
+        out["eye_pix"] = (g, C._robust_z(v))
     for s in ("ca", "art"):
         if s in cyc.sig:
             t, y = cyc.sig[s]
@@ -158,7 +169,7 @@ def load():
     ev = pd.concat([n, r], ignore_index=True)
     ev["cohort"] = np.where(ev["key"].str.startswith("Extra_GCaMP8m"), "GCaMP8m", "RSC2023")
     ev["day"] = ev["mouse"].str.split("_").str[-1]
-    E = {s: epoch_matrix(ev, s) for s in SIGS}
+    E = {s: epoch_matrix(ev, s) for s in SIGS + EXTRA_SIGS}
     ev["pupil_rise"] = wmean(E["pupil"], 0, 15, "max")
     ev["eye_0_15"] = wmean(E["eye"], 0, 15)
     ev["ca_0_15"] = wmean(E["ca"], 0, 15)
@@ -187,6 +198,9 @@ def fig1_heatmap(ev, E):
     axs[0].set_title("day", fontsize=9)
     for ax, s in zip(axs[1:], SIGS):
         M = E[s][order]
+        if s == "eye":                    # top block: pixel speed (no DLC on 2023 days)
+            M = M.copy()
+            M[:n0] = E["eye_pix"][order[:n0]]
         if s == "art":
             M = pd.DataFrame(M.T).rolling(3, center=True, min_periods=1).mean().to_numpy().T
         lim = lims[s] or np.nanpercentile(np.abs(M), 96)
@@ -198,7 +212,14 @@ def fig1_heatmap(ev, E):
         ax.set_yticks([])
         ax.set_xlabel("time from pupil onset (s)")
         n_has = int(np.isfinite(M).any(1).sum())
-        ax.set_title(f"{SIG_LAB[s]}  (n={n_has})", fontsize=10)
+        ax.set_title(f"{SIG_LAB[s]}  (n={n_has})" + ("\ntop: pixel speed · bottom: DLC" if s == "eye" else ""), fontsize=10)
+        if s == "eye":
+            ax.text(0.98, 0.5 * n0 / len(M), "pixel-based\n(different measure)", transform=ax.transAxes,
+                    ha="right", va="center", fontsize=8, color="0.3", style="italic",
+                    bbox=dict(fc="white", ec="none", alpha=0.7))
+            ax.text(0.98, 1 - (n0 + (len(M) - n0) / 2) / len(M), "DLC", transform=ax.transAxes,
+                    ha="right", va="center", fontsize=8, color="0.3", style="italic",
+                    bbox=dict(fc="white", ec="none", alpha=0.7))
         fig.colorbar(im, ax=ax, location="bottom", shrink=0.7, pad=0.01)
     for coh, b in blocks:
         y = n0 / 2 if coh == "RSC2023" else n0 + len(b) / 2
@@ -285,37 +306,40 @@ def fig3_cohorts(ev):
 
 
 def fig4_arousal(ev):
+    """Pupil-rise thirds (within each day), one row per cohort. No eye movement."""
     E2 = ev[ev.type == "N2W"].copy()
+    var = "pupil_rise"
     res = []
     fig, axs = plt.subplots(2, 3, figsize=(15, 7.8), sharex=True, constrained_layout=True)
-    for row, (var, lab, sig0) in enumerate([("pupil_rise", "pupil rise", "pupil"),
-                                            ("eye_0_15", "eye movement", "eye")]):
-        d = E2[E2[var].notna()].copy()
+    for row, coh in enumerate(("RSC2023", "GCaMP8m")):
+        d = E2[(E2.cohort == coh) & E2[var].notna()].copy()
         d["pct"] = d.groupby("day")[var].rank(pct=True)
         d["tert"] = np.digitize(d["pct"], [1 / 3, 2 / 3 + 1e-9])
-        for ax, s in zip(axs[row], (sig0, "ca", "art")):
+        for ax, s in zip(axs[row], ("pupil", "ca", "art")):
             for k in range(3):
                 X = EV[s][d.index[d.tert == k].to_numpy()]
                 if s == "art":
                     X = pd.DataFrame(X.T).rolling(3, center=True, min_periods=1).mean().to_numpy().T
                 mu, se, n = msem(X)
-                ax.plot(RG, mu, color=TERT_COL[k], lw=1.8, label=f"{TERT[k]} {lab} (n={n})")
+                ax.plot(RG, mu, color=TERT_COL[k], lw=1.8, label=f"{TERT[k]} pupil rise (n={n})")
                 ax.fill_between(RG, mu - se, mu + se, color=TERT_COL[k], alpha=0.18, lw=0)
             shade(ax)
             ax.set_ylabel(SIG_LAB[s])
             if row == 1:
                 ax.set_xlabel("time from pupil onset (s)")
-            if s != sig0:
+            if s != "pupil":
                 v = d[["day", var, f"{s}_0_15"]].dropna()
                 r = v.groupby("day")[[var, f"{s}_0_15"]].rank(pct=True)
-                rho, p = stats.spearmanr(r[var], r[f"{s}_0_15"])
-                res.append(dict(split=var, signal=s, n_events=len(v), n_days=v.day.nunique(), within_day_rho=rho, p=p))
-                ax.set_title(f"within-day ρ = {rho:+.2f} (p = {p:.3f})", fontsize=10)
+                rho, pv = stats.spearmanr(r[var], r[f"{s}_0_15"])
+                res.append(dict(cohort=coh, split=var, signal=s, n_events=len(v), n_days=v.day.nunique(),
+                                within_day_rho=rho, p=pv))
+                ax.set_title(f"within-day ρ = {rho:+.2f} (p = {pv:.3f})", fontsize=10)
             else:
-                ax.set_title(f"split by {lab} (thirds within each day; {d.day.nunique()} days)", fontsize=10)
+                ax.set_title(f"{COH[coh]}: {d.day.nunique()} days, {len(d)} events (thirds within each day)",
+                             fontsize=10, color="#2E7D32" if coh == "GCaMP8m" else "#444444", fontweight="bold")
             ax.legend(fontsize=7.5, frameon=False, loc="upper left")
-    fig.suptitle("Does a stronger wake-up give a bigger dilation? WT NREM → wake. Eye movement: DLC on 03.03/03.06, "
-                 "pixel-based elsewhere, none on 2023.07.12", fontsize=10.5, x=0.01, ha="left")
+    fig.suptitle("Does a stronger wake-up give a bigger dilation? WT NREM → wake, split by pupil rise. "
+                 "Top: RSC 2023. Bottom: GCaMP8m 2025–26.", fontsize=10.5, x=0.01, ha="left")
     fig.savefig(FIG / "4_arousal.png", dpi=150)
     plt.close(fig)
     pd.DataFrame(res).to_csv(OUT / "arousal_tests.csv", index=False)
