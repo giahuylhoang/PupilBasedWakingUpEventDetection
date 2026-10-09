@@ -37,9 +37,12 @@ ap.add_argument("--pre", type=float, nargs=2, default=[-5.0, 0.0], help="baselin
 ap.add_argument("--stat", choices=["mean", "median"], default="mean", help="baseline statistic")
 ap.add_argument("--view", type=float, nargs=2, default=[-5.0, 15.0], help="plotted window (s)")
 ap.add_argument("--signal", choices=["art", "ca"], default="art")
+ap.add_argument("--set", choices=["kd_scr", "wt"], default="kd_scr",
+                help="kd_scr: scramble vs KD;  wt: WT split into RSC 2023 vs GCaMP8m (2025-26)")
 ARGS = ap.parse_args()
 PRE_WIN, WIN = tuple(ARGS.pre), tuple(ARGS.view)
-_base = C.ROOT / "data" / "RESULTS_kd_scr_prebaseline_2026-10-09"
+_base = C.ROOT / "data" / {"kd_scr": "RESULTS_kd_scr_prebaseline_2026-10-09",
+                           "wt": "RESULTS_wt_prebaseline_2026-10-09"}[ARGS.set]
 OUT = _base if (PRE_WIN, ARGS.stat, WIN) == ((-5.0, 0.0), "mean", (-5.0, 15.0)) else \
     _base / f"pre{ARGS.stat}_{PRE_WIN[0]:g}_{PRE_WIN[1]:g}__view_{WIN[0]:g}_{WIN[1]:g}"
 if ARGS.signal != "art":
@@ -49,7 +52,24 @@ Q = {"art": "ΔD/D_pre", "ca": "ΔF/F_pre"}[SIG]                 # plotted quant
 SIGNAME = {"art": "arteriole", "ca": "Ca²⁺"}[SIG]
 VAR = {"art": "D", "ca": "F"}[SIG]
 BASE_LABEL = f"{ARGS.stat} {PRE_WIN[0]:g}…{PRE_WIN[1]:g} s"
-GROUPS = ("SCR", "KD")
+if ARGS.set == "kd_scr":
+    GROUPS = ("SCR", "KD")
+    COL = {g: COL[g] for g in GROUPS}
+    LAB = {g: LAB[g] for g in GROUPS}
+else:
+    GROUPS = ("RSC2023", "GCaMP8m")
+    COL = {"RSC2023": "#424242", "GCaMP8m": "#2E7D32"}
+    LAB = {"RSC2023": "WT RSC 2023", "GCaMP8m": "WT GCaMP8m 2025-26"}
+G0, G1 = GROUPS
+
+
+def load_events():
+    if ARGS.set == "kd_scr":
+        ev = C.response_events(C.keys_for(list(GROUPS)))
+    else:
+        ev = C.response_events(C.keys_for(["WT"]))
+        ev["group"] = np.where(ev["key"].str.startswith("Extra_GCaMP8m"), "GCaMP8m", "RSC2023")
+    return ev[ev["type"] == "N2W"].reset_index(drop=True)
 
 
 def epochs(ev):
@@ -87,8 +107,7 @@ def main():
     C.set_label_mode("manual")
     (OUT / "figures").mkdir(parents=True, exist_ok=True)
     (OUT / "tables").mkdir(parents=True, exist_ok=True)
-    ev = C.response_events(C.keys_for(list(GROUPS)))
-    ev = ev[ev["type"] == "N2W"].reset_index(drop=True)
+    ev = load_events()
     rg, P, Mold, ratio = epochs(ev)
 
     a_new, p_new, mu_new = metrics(rg, P)
@@ -109,11 +128,12 @@ def main():
 
     T = []
     for mtr in ("mean_pre", "auc_pre", "peak_pre", "auc_median", "peak_median"):
-        a = D[D.group == "SCR"][mtr].to_numpy()
-        b = D[D.group == "KD"][mtr].to_numpy()
+        a = D[D.group == G0][mtr].to_numpy()
+        b = D[D.group == G1][mtr].to_numpy()
         r = C.group_test(a, b)
-        T.append(dict(metric=mtr, scr_days=len(a), kd_days=len(b), scr_mean=a.mean(), kd_mean=b.mean(),
-                      scr_vs0_p=stats.ttest_1samp(a, 0).pvalue, kd_vs0_p=stats.ttest_1samp(b, 0).pvalue,
+        T.append(dict(metric=mtr, **{f"{G0}_days": len(a), f"{G1}_days": len(b), f"{G0}_mean": a.mean(),
+                                     f"{G1}_mean": b.mean(), f"{G0}_vs0_p": stats.ttest_1samp(a, 0).pvalue,
+                                     f"{G1}_vs0_p": stats.ttest_1samp(b, 0).pvalue},
                       **{k: r[k] for k in ("hedges_g", "welch_p", "mw_p")}))
     T = pd.DataFrame(T)
     T.to_csv(OUT / "tables" / "group_tests.csv", index=False)
@@ -129,7 +149,7 @@ def main():
             ylim += [np.nanmin(mu - se), np.nanmax(mu + se)]
     lo, hi = min(ylim), max(ylim)
 
-    ncol = max(len(tr["SCR"]), len(tr["KD"]))
+    ncol = max(len(tr[G0]), len(tr[G1]))
     fig, axs = plt.subplots(2, ncol, figsize=((2.9 if WIN[1] - WIN[0] <= 30 else 4.2) * ncol, 6.4), sharey=True, sharex=True,
                             constrained_layout=True)
     for row, g in enumerate(GROUPS):
@@ -141,15 +161,15 @@ def main():
             X = tr[g][days[j]]
             mu = 100 * np.nanmean(X, 0); se = 100 * np.nanstd(X, 0) / np.sqrt(np.isfinite(X).sum(0))
             ax.axvspan(*PRE_WIN, color="0.9", zorder=0); ax.axvspan(*C.RESP_WIN, color="#FFF3E0", zorder=0)
-            ax.plot(t, mu, color=C.GROUP_COL[g], lw=1.8)
-            ax.fill_between(t, mu - se, mu + se, color=C.GROUP_COL[g], alpha=0.25, lw=0)
+            ax.plot(t, mu, color=COL[g], lw=1.8)
+            ax.fill_between(t, mu - se, mu + se, color=COL[g], alpha=0.25, lw=0)
             ax.axhline(0, color="0.5", lw=0.6); ax.axvline(0, color="k", lw=0.6)
             row_d = D[(D.group == g) & (D.day == days[j].split("_")[-1])].iloc[0]
             ax.set_title(f"{days[j].split('_')[-1]}  (n={len(X)})\nmean 0–15 s {100 * row_d.mean_pre:+.1f}%",
                          fontsize=9)
             ax.set_ylim(lo, hi)
             if j == 0:
-                ax.set_ylabel(f"{C.GROUP_LABEL[g]}\n{Q} (%)")
+                ax.set_ylabel(f"{LAB[g]}\n{Q} (%)")
             if row == 1:
                 ax.set_xlabel("time from pupil onset (s)")
     fig.suptitle(f"Wake-up {SIGNAME} response per recording day, {Q} = ({VAR} − {VAR}_pre)/{VAR}_pre, {VAR}_pre = {BASE_LABEL}; "
@@ -163,15 +183,15 @@ def main():
     ax = axs[0]
     for g in GROUPS:
         mu = G[g].mean(0); se = G[g].std(0, ddof=1) / np.sqrt(len(G[g]))
-        ax.plot(t, mu, color=C.GROUP_COL[g], lw=2, label=f"{C.GROUP_LABEL[g]} ({len(G[g])} days, "
+        ax.plot(t, mu, color=COL[g], lw=2, label=f"{LAB[g]} ({len(G[g])} days, "
                 f"{sum(len(X) for X in tr[g].values())} events)")
-        ax.fill_between(t, mu - se, mu + se, color=C.GROUP_COL[g], alpha=0.22, lw=0)
+        ax.fill_between(t, mu - se, mu + se, color=COL[g], alpha=0.22, lw=0)
     ax.axvspan(*PRE_WIN, color="0.9", zorder=0); ax.axvspan(*C.RESP_WIN, color="#FFF3E0", zorder=0)
     ax.axhline(0, color="0.5", lw=0.6); ax.axvline(0, color="k", lw=0.6)
     ax.set_xlabel("time from pupil onset (s)"); ax.set_ylabel(f"{Q} (%)")
     ax.set_title("group mean ± SEM across days", fontsize=10); ax.legend(fontsize=8, frameon=False, loc="upper left")
     ax = axs[1]
-    a, b = G["SCR"], G["KD"]
+    a, b = G[G0], G[G1]
     diff = b.mean(0) - a.mean(0)
     se = np.sqrt(a.var(0, ddof=1) / len(a) + b.var(0, ddof=1) / len(b))
     va, vb = a.var(0, ddof=1) / len(a), b.var(0, ddof=1) / len(b)
@@ -182,10 +202,10 @@ def main():
     ax.axvspan(*PRE_WIN, color="0.9", zorder=0); ax.axvspan(*C.RESP_WIN, color="#FFF3E0", zorder=0)
     ax.axhline(0, color="0.5", lw=0.6); ax.axvline(0, color="k", lw=0.6)
     r = T[T.metric == "mean_pre"].iloc[0]
-    ax.set_title(f"KD − scramble   (mean 0–15 s: Welch p = {r.welch_p:.2f}, g = {r.hedges_g:+.2f})", fontsize=10)
+    ax.set_title(f"{LAB[G1]} − {LAB[G0]}   (mean 0–15 s: Welch p = {r.welch_p:.2f}, g = {r.hedges_g:+.2f})", fontsize=10)
     ax.set_xlabel("time from pupil onset (s)"); ax.set_ylabel(f"difference in {Q} (%)")
     ax.legend(fontsize=8, frameon=False, loc="upper left")
-    fig.suptitle(f"NREM → wake {SIGNAME}, scramble vs IP3R2 KD (unit = recording day; {VAR}_pre = {BASE_LABEL})", fontsize=11, x=0.01, ha="left")
+    fig.suptitle(f"NREM → wake {SIGNAME}, {LAB[G0]} vs {LAB[G1]} (unit = recording day; {VAR}_pre = {BASE_LABEL})", fontsize=11, x=0.01, ha="left")
     fig.savefig(OUT / "figures" / "B_group.png", dpi=150)
     plt.close(fig)
 
