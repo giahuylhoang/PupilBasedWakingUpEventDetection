@@ -1106,6 +1106,7 @@ def test_rolling_window_control_only_appears_for_the_rolling_mode():
     assert shown[0].value == preprocess.DEFAULT_ROLLING_WINDOW_SEC
 
 
+@requires_sample_file
 def test_rolling_mode_runs_on_the_real_workbook_and_keeps_the_statistics():
     at = _upload_sample_and_configure(_fresh_app())
     _selectbox(at, "Normalise").set_value("dx_x0_rolling")
@@ -1115,6 +1116,7 @@ def test_rolling_mode_runs_on_the_real_workbook_and_keeps_the_statistics():
     assert any("pre vs TMX" in s for s in subheaders), subheaders
 
 
+@requires_sample_file
 def test_default_rolling_window_is_safe_for_the_default_bands():
     """200 s is 1/0.005 Hz, so the shipped default must not trip its own
     guard -- a default that warns on first use trains users to ignore it."""
@@ -1125,6 +1127,7 @@ def test_default_rolling_window_is_safe_for_the_default_bands():
     assert not any("longest period you are measuring" in w for w in warnings), warnings
 
 
+@requires_sample_file
 def test_too_short_rolling_window_warns_in_the_ui():
     at = _upload_sample_and_configure(_fresh_app())
     _selectbox(at, "Normalise").set_value("dx_x0_rolling")
@@ -1138,6 +1141,7 @@ def test_too_short_rolling_window_warns_in_the_ui():
     assert "200 s" in hit[0] and "0.005 Hz" in hit[0]
 
 
+@requires_sample_file
 def test_rolling_window_is_recorded_in_parameters_only_when_used():
     """parameters.json must not claim a baseline window for a run that did
     not use one -- the same rule window/nw/k already follow."""
