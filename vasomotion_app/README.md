@@ -155,6 +155,70 @@ estimated effect toward "no effect" while still counting toward n.
 If you see this error, fix the workbook. No statistical handling repairs a column
 that was never recorded.
 
+## Normalisation — upload raw, the pipeline does it
+
+**Upload your raw values. You do not need to normalise anything first.** For
+every animal, in every condition, the tool normalises that trace against its
+own baseline before computing anything. Nothing is shared between animals or
+between conditions.
+
+Pick the mode under **Advanced: preprocessing → Normalise**:
+
+| mode | baseline used |
+| --- | --- |
+| `dx_x0_median` (default) | That trace's whole-recording median. |
+| `dx_x0_mean` | Same, using the mean. |
+| `dx_x0_rolling` | A **local** baseline: a centred rolling median, window length of your choosing. |
+| `zscore` | Mean-centred, divided by SD. |
+| `none` | No normalisation. Power then carries absolute vessel size. |
+
+### "Shouldn't the baseline be local to each analysis window?"
+
+A reasonable worry, and the answer has a hard constraint in it.
+
+Subtracting a local baseline high-passes the trace at roughly 1/window:
+anything slower than the baseline window is absorbed into the "baseline" and
+removed. So **the baseline window must be longer than the longest period you
+want to measure.** Measured here on a pure 0.01 Hz (100 s) oscillation, as the
+fraction of amplitude that survives:
+
+| baseline window | amplitude recovered |
+| --- | --- |
+| 10 s | 15% |
+| 30 s | 45% |
+| 65 s | 87% |
+| 100 s | 100% |
+
+A band edge at 0.005 Hz is a 200 s period, so it needs a baseline window of at
+least 200 s. On a 5-minute recording that is two-thirds of the whole trace — at
+which point a "local" baseline is barely distinguishable from the global one.
+That is not an implementation limit; "local baseline" and "slow fluctuation" are
+the same thing at the same timescale.
+
+The app enforces this: with `dx_x0_rolling` it warns whenever the baseline
+window is shorter than `1 / lowest band edge`, naming both numbers. The default
+is 200 s, matched to the default bands.
+
+**Measured on a real 5-minute workbook**, normalising each 65.5 s analysis
+window by its own median instead of the global median moved the myogenic band
+(0.04–0.15 Hz) by a median of **4.5%** — but cut ultra-low band power to a
+median of **0.49×**, worst case 0.11×. That ultra-low change is destruction, not
+correction.
+
+### The thing that matters more here: window length
+
+At 3.91 Hz the default 256-sample window is 65.5 s, so the lowest frequency it
+can resolve is **0.0153 Hz**. A band starting at 0.005 Hz is below that — the app
+warns, and power there is interpolated rather than measured.
+
+For an ultra-low band on a 5-minute recording, use **multitaper Thomson**: it
+uses the whole 300 s trace (lowest resolvable 0.0033 Hz) and still averages
+several tapers. On the real workbook that raised ultra-low band power by a median
+of **2.2×** versus the 65.5 s Welch window, and cleared the band-edge warning.
+
+A useful side effect: when the whole trace is one window, global and local
+baselines are the same thing, so the question above stops mattering.
+
 ## Trace variability (SD after normalisation)
 
 `trace_stats.csv` has one row per animal per condition. It reports **two**

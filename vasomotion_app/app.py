@@ -185,6 +185,8 @@ def _push_settings_into_widgets(settings: dict) -> None:
         ss["max_freq_input"] = float(settings["max_freq"])
     if settings.get("xscale") is not None:
         ss["xscale_radio"] = settings["xscale"]
+    if settings.get("rolling_window_seconds") is not None:
+        ss["rolling_window_input"] = float(settings["rolling_window_seconds"])
 
     bands = settings.get("bands")
     if bands:
@@ -308,6 +310,29 @@ with st.sidebar:
         normalize = st.selectbox(
             "Normalise", options=list(preprocess.NORMALIZE_METHODS), key="normalize_select"
         )
+        # 'dx_x0_rolling' divides by a time-varying local baseline instead of
+        # the whole-trace median, which is what a "local baseline per analysis
+        # window" means in practice. Its window length is only shown for that
+        # mode, since every other mode ignores it -- the same reasoning that
+        # keeps NW/K hidden for non-multitaper methods. The value is still
+        # held in session_state across a mode switch, so switching away and
+        # back does not silently reset a deliberately chosen window.
+        st.session_state.setdefault(
+            "rolling_window_input", preprocess.DEFAULT_ROLLING_WINDOW_SEC
+        )
+        rolling_window_seconds = st.session_state["rolling_window_input"]
+        if normalize == "dx_x0_rolling":
+            rolling_window_seconds = st.number_input(
+                "Local baseline window (s)",
+                min_value=1.0, step=10.0, key="rolling_window_input",
+                help=(
+                    "Length of the centred rolling median used as the baseline. "
+                    "Subtracting a rolling baseline removes fluctuations slower than "
+                    "this window, so it must be LONGER than the longest period you are "
+                    "measuring: 200 s for a 0.005 Hz band edge. Shorter, and the "
+                    "baseline absorbs the signal."
+                ),
+            )
         st.session_state.setdefault("detrend_select", "linear")
         detrend_method = st.selectbox(
             "Detrend", options=list(preprocess.DETREND_METHODS), key="detrend_select"
@@ -640,6 +665,16 @@ else:
     effective_window_length = (
         int(psd_params.nperseg) if psd_params.nperseg is not None else n_samples_each
     )
+    # A rolling baseline high-passes the trace at ~1/window, so a window
+    # shorter than the longest period being measured silently removes the
+    # signal of interest. Checked here, beside the band-edge warnings, since
+    # both are "this window cannot support these bands" findings.
+    if normalize == "dx_x0_rolling":
+        for rolling_warning in preprocess.validate_rolling_window(
+            rolling_window_seconds, band_defs, n_samples_each, fs
+        ):
+            st.warning(rolling_warning)
+
     band_edge_warnings = bands_module.validate_band_edges(band_defs, effective_window_length, fs)
     if band_edge_warnings:
         # Framed as informative rather than alarming (Defect 3): this fires
@@ -660,6 +695,7 @@ else:
             detrend_method=detrend_method, highpass_cutoff=highpass_cutoff,
             highpass_order=highpass_order, trim_seconds=trim_seconds,
             psd_params=psd_params, band_defs=band_defs, max_freq=max_freq,
+            rolling_window_seconds=rolling_window_seconds,
         )
     except ValueError as exc:
         st.error(f"Could not run the analysis with these settings: {exc}")
@@ -733,6 +769,7 @@ else:
         long_df, fs=fs, signal_type=signal_type, normalize=normalize,
         detrend_method=detrend_method, highpass_cutoff=highpass_cutoff,
         highpass_order=highpass_order, trim_seconds=trim_seconds,
+        rolling_window_seconds=rolling_window_seconds,
     )
     with st.expander("Per-trace amplitude statistics"):
         st.caption(
@@ -929,6 +966,7 @@ else:
         signal_type=signal_type, normalize=normalize, detrend_method=detrend_method,
         highpass_cutoff=highpass_cutoff, highpass_order=highpass_order, trim_seconds=trim_seconds,
         psd_params=psd_params, max_freq=max_freq, xscale=xscale, bands=band_defs, fs=fs,
+        rolling_window_seconds=rolling_window_seconds,
     )
     st.download_button(
         "Download parameters.json", bundle_module.parameters_to_json(parameters),

@@ -5,6 +5,7 @@ import numpy as np
 import pandas as pd
 import pytest
 
+from vasomotion_app import preprocess
 from vasomotion_app.preprocess import (
     TRACE_STATS_COLUMNS,
     area_to_diameter,
@@ -403,3 +404,212 @@ def test_trace_stats_respects_trim_in_n_samples_and_duration():
     row = stats.iloc[0]
     assert row["n_samples"] == 80
     assert row["duration_sec"] == pytest.approx(40.0)
+
+
+# --------------------------------------------------------------------------
+# Rolling (local) baseline normalisation
+# --------------------------------------------------------------------------
+
+def test_rolling_baseline_tracks_a_drifting_baseline():
+    fs = 4.0
+    t = np.arange(0, 300, 1 / fs)
+    drifting = 1000.0 + np.linspace(0, 500, len(t))
+    baseline = preprocess.rolling_baseline(drifting, fs, 50.0)
+    # A rolling median of a monotonic ramp follows the ramp.
+    assert baseline[0] < baseline[len(baseline) // 2] < baseline[-1]
+    assert np.corrcoef(baseline, drifting)[0, 1] > 0.999
+
+
+def test_rolling_baseline_has_no_nan_at_the_edges():
+    """min_periods=1 rather than a NaN edge: on a 300 s recording a 200 s
+    centred window would otherwise blank the first and last ~100 s, which is
+    most of the data."""
+    fs = 4.0
+    values = np.arange(1000.0, 2000.0)
+    baseline = preprocess.rolling_baseline(values, fs, 100.0)
+    assert len(baseline) == len(values)
+    assert not np.isnan(baseline).any()
+
+
+def test_rolling_baseline_window_is_centred_not_lagged():
+    """A centred window must not shift the baseline in time. A trailing
+    window would lag the ramp and leave a constant positive residual."""
+    fs = 4.0
+    values = 1000.0 + np.arange(400) * 2.0
+    baseline = preprocess.rolling_baseline(values, fs, 20.0)
+    mid = slice(100, 300)  # away from the shrinking edge windows
+    residual = values[mid] - baseline[mid]
+    assert abs(float(np.mean(residual))) < 1e-6, "centred window should leave no net offset"
+
+
+def test_rolling_baseline_uses_an_odd_window_length():
+    fs = 10.0
+    values = np.arange(500.0)
+    # 2.0 s at 10 Hz is 20 samples -> must be bumped to 21 so it can centre.
+    assert np.array_equal(
+        preprocess.rolling_baseline(values, fs, 2.0),
+        pd.Series(values).rolling(window=21, center=True, min_periods=1).median().to_numpy(),
+    )
+
+
+def test_rolling_baseline_rejects_a_non_positive_window():
+    with pytest.raises(ValueError, match="window_seconds must be > 0"):
+        preprocess.rolling_baseline(np.arange(10.0), 4.0, 0.0)
+
+
+def test_normalize_dx_x0_rolling_removes_drift_that_global_normalisation_keeps():
+    """The thing a local baseline is actually for: a trace whose baseline
+    shifts should come out centred on zero throughout, not drifting."""
+    fs = 4.0
+    t = np.arange(0, 300, 1 / fs)
+    drifting = 1000.0 + np.linspace(0, 600, len(t)) + 20.0 * np.sin(2 * np.pi * 0.08 * t)
+
+    rolled = preprocess.normalize_signal(
+        drifting, "dx_x0_rolling", fs=fs, rolling_window_seconds=30.0
+    )
+    globally = preprocess.normalize_signal(drifting, "dx_x0_median")
+
+    first_half_r, second_half_r = np.mean(rolled[: len(rolled) // 2]), np.mean(rolled[len(rolled) // 2 :])
+    first_half_g, second_half_g = np.mean(globally[: len(globally) // 2]), np.mean(globally[len(globally) // 2 :])
+    assert abs(first_half_r - second_half_r) < 0.01, "rolling baseline should remove the drift"
+    assert abs(first_half_g - second_half_g) > 0.2, "global baseline keeps it (that is the point)"
+
+
+def test_normalize_dx_x0_rolling_requires_fs():
+    with pytest.raises(ValueError, match="fs is required"):
+        preprocess.normalize_signal(np.arange(100.0), "dx_x0_rolling")
+
+
+def test_rolling_is_registered_as_a_normalize_method():
+    assert "dx_x0_rolling" in preprocess.NORMALIZE_METHODS
+    # And the existing modes are untouched, in order.
+    assert preprocess.NORMALIZE_METHODS[:4] == ("none", "dx_x0_median", "dx_x0_mean", "zscore")
+
+
+@pytest.mark.parametrize(
+    "window_sec,min_recovered,max_recovered",
+    [
+        (10.0, 0.10, 0.25),
+        (20.0, 0.25, 0.40),
+        (30.0, 0.38, 0.55),
+        (50.0, 0.65, 0.80),
+        (65.0, 0.80, 0.95),
+        (100.0, 0.95, 1.10),
+    ],
+)
+def test_short_rolling_window_suppresses_the_band_it_overlaps(
+    window_sec, min_recovered, max_recovered
+):
+    """The physics behind the guard, pinned against measured values.
+
+    Subtracting a rolling median high-passes at roughly 1/window, so a
+    window shorter than the period being measured eats the signal. Measured
+    recovery of a pure 0.01 Hz (100 s) oscillation, as a fraction of what
+    global dx/x0 recovers: 0.15 at a 10 s baseline, 0.45 at 30 s, 0.87 at
+    65 s, and 1.00 once the window reaches the 100 s period itself. This is
+    why a local baseline is NOT simply better than a global one, and why
+    `validate_rolling_window` demands window >= 1 / lowest_band_edge."""
+    fs = 3.91
+    t = np.arange(0, 300, 1 / fs)
+    signal = 1500.0 + 300.0 * np.sin(2 * np.pi * 0.01 * t)
+
+    rolled = preprocess.normalize_signal(
+        signal, "dx_x0_rolling", fs=fs, rolling_window_seconds=window_sec
+    )
+    globally = preprocess.normalize_signal(signal, "dx_x0_median")
+    recovered = (rolled.max() - rolled.min()) / (globally.max() - globally.min())
+    assert min_recovered <= recovered <= max_recovered, (
+        f"{window_sec} s baseline recovered {recovered:.3f} of the true amplitude, "
+        f"expected {min_recovered}-{max_recovered}"
+    )
+
+
+def test_rolling_suppression_increases_monotonically_with_window_length():
+    """The ordering is the part that must never regress: a longer baseline
+    window always preserves at least as much of a slow oscillation."""
+    fs = 3.91
+    t = np.arange(0, 300, 1 / fs)
+    signal = 1500.0 + 300.0 * np.sin(2 * np.pi * 0.01 * t)
+    recovered = [
+        (lambda r: r.max() - r.min())(
+            preprocess.normalize_signal(
+                signal, "dx_x0_rolling", fs=fs, rolling_window_seconds=w
+            )
+        )
+        for w in (10.0, 20.0, 30.0, 50.0, 65.0, 100.0)
+    ]
+    assert all(a < b for a, b in zip(recovered, recovered[1:])), recovered
+
+
+def test_validate_rolling_window_warns_when_shorter_than_the_lowest_band_period():
+    bands = {"ultra_low": (0.005, 0.04), "myogenic": (0.04, 0.15)}
+    warnings = preprocess.validate_rolling_window(65.0, bands, n_samples=1173, fs=3.91)
+    assert len(warnings) == 1
+    assert "shorter than the longest period" in warnings[0]
+    assert "200 s" in warnings[0]  # 1 / 0.005 Hz
+    assert "0.005 Hz" in warnings[0]
+
+
+def test_validate_rolling_window_accepts_a_window_long_enough_for_the_bands():
+    bands = {"ultra_low": (0.005, 0.04), "myogenic": (0.04, 0.15)}
+    assert preprocess.validate_rolling_window(200.0, bands, n_samples=1173, fs=3.91) == []
+
+
+def test_validate_rolling_window_scales_its_demand_to_the_bands_requested():
+    """A myogenic-only analysis (0.04 Hz = 25 s) is safe with a short window
+    that the ultra-low band would reject. The guard must follow the bands,
+    not a hardcoded minimum."""
+    myogenic_only = {"myogenic": (0.04, 0.15)}
+    assert preprocess.validate_rolling_window(65.0, myogenic_only, n_samples=1173, fs=3.91) == []
+    assert preprocess.validate_rolling_window(10.0, myogenic_only, n_samples=1173, fs=3.91)
+
+
+def test_validate_rolling_window_warns_when_longer_than_the_recording():
+    bands = {"myogenic": (0.04, 0.15)}
+    warnings = preprocess.validate_rolling_window(400.0, bands, n_samples=1173, fs=3.91)
+    assert len(warnings) == 1
+    assert "effectively the global median" in warnings[0]
+
+
+def test_validate_rolling_window_rejects_a_non_positive_window():
+    warnings = preprocess.validate_rolling_window(0.0, {"b": (0.01, 0.1)}, 1000, 4.0)
+    assert warnings and "must be > 0" in warnings[0]
+
+
+def test_validate_rolling_window_handles_no_bands():
+    assert preprocess.validate_rolling_window(100.0, None, n_samples=1173, fs=3.91) == []
+    assert preprocess.validate_rolling_window(100.0, {}, n_samples=1173, fs=3.91) == []
+
+
+def test_preprocess_stages_threads_the_rolling_window_through():
+    """The stage chain must actually use the requested window, not the
+    module default -- otherwise the control would silently do nothing."""
+    fs = 4.0
+    t = np.arange(0, 200, 1 / fs)
+    values = 1000.0 + np.linspace(0, 400, len(t))
+    short = preprocess.preprocess_stages(
+        values, fs=fs, signal_type="diameter", normalize="dx_x0_rolling",
+        detrend_method="none", highpass_cutoff=None, rolling_window_seconds=20.0,
+    )["normalized"]
+    long = preprocess.preprocess_stages(
+        values, fs=fs, signal_type="diameter", normalize="dx_x0_rolling",
+        detrend_method="none", highpass_cutoff=None, rolling_window_seconds=150.0,
+    )["normalized"]
+    assert not np.allclose(short, long), "window length must change the result"
+    assert np.std(short) < np.std(long), "a shorter baseline removes more of the drift"
+
+
+def test_trace_stats_table_accepts_the_rolling_window():
+    df = pd.DataFrame(
+        {
+            "animal": [1] * 200, "sex": ["M"] * 200, "region": ["R1"] * 200,
+            "condition": ["pre"] * 200, "sample": range(1, 201),
+            "value": 1000.0 + np.arange(200.0),
+        }
+    )
+    out = preprocess.trace_stats_table(
+        df, fs=4.0, signal_type="diameter", normalize="dx_x0_rolling",
+        highpass_cutoff=None, rolling_window_seconds=25.0,
+    )
+    assert len(out) == 1
+    assert np.isfinite(out.iloc[0]["sd_normalized"])

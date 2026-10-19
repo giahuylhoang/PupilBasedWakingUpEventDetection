@@ -1085,3 +1085,75 @@ def test_dockerfile_copies_every_top_level_module():
         f"module(s) {missing} are never copied into the container image, so the deployed "
         f"app will fail to import them. Dockerfile COPY sources: {patterns}"
     )
+
+
+# --- rolling (local) baseline normalisation in the UI -------------------
+
+def _rolling_window_inputs(at):
+    return [n for n in at.sidebar.number_input if "Local baseline window" in n.label]
+
+
+def test_rolling_window_control_only_appears_for_the_rolling_mode():
+    """Same reasoning as NW/K being hidden for non-multitaper methods: a
+    control that the selected mode ignores should not be on screen."""
+    at = _fresh_app()
+    assert _rolling_window_inputs(at) == []
+
+    _selectbox(at, "Normalise").set_value("dx_x0_rolling")
+    at.run()
+    shown = _rolling_window_inputs(at)
+    assert len(shown) == 1
+    assert shown[0].value == preprocess.DEFAULT_ROLLING_WINDOW_SEC
+
+
+def test_rolling_mode_runs_on_the_real_workbook_and_keeps_the_statistics():
+    at = _upload_sample_and_configure(_fresh_app())
+    _selectbox(at, "Normalise").set_value("dx_x0_rolling")
+    at.run()
+    assert not at.exception
+    subheaders = [s.value for s in at.subheader]
+    assert any("pre vs TMX" in s for s in subheaders), subheaders
+
+
+def test_default_rolling_window_is_safe_for_the_default_bands():
+    """200 s is 1/0.005 Hz, so the shipped default must not trip its own
+    guard -- a default that warns on first use trains users to ignore it."""
+    at = _upload_sample_and_configure(_fresh_app())
+    _selectbox(at, "Normalise").set_value("dx_x0_rolling")
+    at.run()
+    warnings = [w.value for w in at.warning]
+    assert not any("longest period you are measuring" in w for w in warnings), warnings
+
+
+def test_too_short_rolling_window_warns_in_the_ui():
+    at = _upload_sample_and_configure(_fresh_app())
+    _selectbox(at, "Normalise").set_value("dx_x0_rolling")
+    at.run()
+    _rolling_window_inputs(at)[0].set_value(65.0)
+    at.run()
+    assert not at.exception
+    warnings = [w.value for w in at.warning]
+    hit = [w for w in warnings if "longest period you are measuring" in w]
+    assert hit, warnings
+    assert "200 s" in hit[0] and "0.005 Hz" in hit[0]
+
+
+def test_rolling_window_is_recorded_in_parameters_only_when_used():
+    """parameters.json must not claim a baseline window for a run that did
+    not use one -- the same rule window/nw/k already follow."""
+    at = _upload_sample_and_configure(_fresh_app())
+    params = bundle.build_parameters_dict(
+        signal_type="area", normalize="dx_x0_median", detrend_method="linear",
+        highpass_cutoff=0.005, highpass_order=4, trim_seconds=0.0,
+        psd_params=PSDParams(), max_freq=0.5, xscale="log",
+        bands={"ultra_low": (0.005, 0.04)}, fs=3.91, rolling_window_seconds=200.0,
+    )
+    assert params["rolling_window_seconds"] is None, "not used, so not recorded"
+
+    params_rolling = bundle.build_parameters_dict(
+        signal_type="area", normalize="dx_x0_rolling", detrend_method="linear",
+        highpass_cutoff=0.005, highpass_order=4, trim_seconds=0.0,
+        psd_params=PSDParams(), max_freq=0.5, xscale="log",
+        bands={"ultra_low": (0.005, 0.04)}, fs=3.91, rolling_window_seconds=200.0,
+    )
+    assert params_rolling["rolling_window_seconds"] == 200.0

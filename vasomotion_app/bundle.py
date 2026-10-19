@@ -104,6 +104,7 @@ def build_parameters_dict(
     xscale: str,
     bands: dict[str, tuple[float, float]],
     fs: float,
+    rolling_window_seconds: float | None = None,
 ) -> dict:
     """Assemble the full settings dict written as parameters.json. This dict
     is both the settings export and the reload format: every field here is
@@ -152,6 +153,12 @@ def build_parameters_dict(
         "highpass_cutoff": highpass_cutoff,
         "highpass_order": highpass_order,
         "trim_seconds": trim_seconds,
+        # Recorded only when it was actually used. Every other normalisation
+        # mode ignores it, and exporting a number the run did not consume is
+        # the same mistake window/nw/k are nulled below to avoid.
+        "rolling_window_seconds": (
+            rolling_window_seconds if normalize == "dx_x0_rolling" else None
+        ),
         "psd": {
             "method": psd_params.method,
             "nperseg": psd_params.nperseg,
@@ -212,6 +219,7 @@ def run_pipeline(
     psd_params: PSDParams,
     band_defs: dict[str, tuple[float, float]],
     max_freq: float,
+    rolling_window_seconds: float = preprocess_module.DEFAULT_ROLLING_WINDOW_SEC,
 ) -> dict:
     """Run the full Stage 1 -> Stage 2 -> Stage 3 pipeline on a tidy long
     dataframe (as produced by io_excel.load_workbook_long).
@@ -234,6 +242,7 @@ def run_pipeline(
         long_df, fs=fs, signal_type=signal_type, normalize=normalize,
         detrend_method=detrend_method, highpass_cutoff=highpass_cutoff,
         highpass_order=highpass_order, trim_seconds=trim_seconds,
+        rolling_window_seconds=rolling_window_seconds,
     )
     full_psd = psd_methods_module.compute_psd_table(preprocessed, fs, psd_params)
     full_psd = full_psd[full_psd["frequency"] <= max_freq].reset_index(drop=True)

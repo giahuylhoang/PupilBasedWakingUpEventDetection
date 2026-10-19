@@ -19,8 +19,17 @@ import pandas as pd
 from scipy.signal import butter, detrend as scipy_detrend, sosfiltfilt
 
 SIGNAL_TYPES = ("area", "diameter")
-NORMALIZE_METHODS = ("none", "dx_x0_median", "dx_x0_mean", "zscore")
+NORMALIZE_METHODS = ("none", "dx_x0_median", "dx_x0_mean", "zscore", "dx_x0_rolling")
 DETREND_METHODS = ("none", "constant", "linear")
+
+# Default length of the rolling-baseline window, in seconds, for
+# normalize='dx_x0_rolling'. 200 s is 1 / 0.005 Hz -- the period of the
+# default ultra_low band's lower edge -- because a rolling baseline shorter
+# than the longest period you want to measure subtracts away the very
+# fluctuation you are trying to measure (see `rolling_baseline` and
+# `validate_rolling_window`). It is a starting point matched to the default
+# bands, not a universally right number.
+DEFAULT_ROLLING_WINDOW_SEC = 200.0
 
 MIN_PLAUSIBLE_DURATION_SEC = 10.0
 MAX_PLAUSIBLE_DURATION_SEC = 6 * 3600.0
@@ -45,9 +54,108 @@ def area_to_diameter(values: np.ndarray, signal_type: str) -> np.ndarray:
     raise ValueError(f"signal_type must be one of {SIGNAL_TYPES}, got {signal_type!r}")
 
 
-def normalize_signal(values: np.ndarray, method: str) -> np.ndarray:
+def rolling_baseline(values: np.ndarray, fs: float, window_seconds: float) -> np.ndarray:
+    """Centred rolling median of `values`, used as a time-varying baseline.
+
+    The window is `window_seconds` long, converted to an odd sample count so
+    it can be centred without introducing a half-sample lag. Near the two
+    ends, where a full centred window does not exist, the window shrinks to
+    the available samples (pandas' `min_periods=1`) rather than returning
+    NaN: a NaN baseline would propagate into the normalised trace and knock
+    out the first and last ~100 s of a 5-minute recording, which is a large
+    fraction of the data to lose to an edge convention.
+
+    A median rather than a mean, matching `normalize_signal`'s dx_x0_median:
+    it is insensitive to the brief dilation spikes that are the signal of
+    interest, so the baseline tracks the vessel's resting calibre instead of
+    being dragged upward by the events themselves.
+    """
+    if window_seconds <= 0:
+        raise ValueError(f"window_seconds must be > 0, got {window_seconds}")
+    x = np.asarray(values, dtype=float)
+    n_window = int(round(window_seconds * fs))
+    n_window = max(n_window, 1)
+    if n_window % 2 == 0:
+        n_window += 1
+    return (
+        pd.Series(x)
+        .rolling(window=n_window, center=True, min_periods=1)
+        .median()
+        .to_numpy()
+    )
+
+
+def validate_rolling_window(
+    window_seconds: float, bands: dict | None, n_samples: int, fs: float
+) -> list[str]:
+    """Warn when a rolling-baseline window would corrupt the bands being
+    measured, or is longer than the recording.
+
+    This is the whole reason a rolling baseline is not simply better than a
+    global one. Subtracting a rolling median high-passes the trace at
+    roughly 1 / window_seconds: fluctuations slower than the window are
+    absorbed into the "baseline" and removed. So a baseline window must be
+    LONGER than the longest period you intend to measure, i.e.
+    window_seconds >= 1 / lowest_band_edge. With the default ultra_low band
+    starting at 0.005 Hz that means >= 200 s, which on a 300 s recording is
+    already two-thirds of the whole trace -- at which point a "local"
+    baseline is barely distinguishable from the global one.
+
+    That is not a limitation of this implementation; it is what "local
+    baseline" and "slow fluctuation" mean at the same timescale. Measured on
+    a real 5-minute workbook, normalising each 65.5 s analysis window by its
+    own median cut ultra-low band power to a median of 0.49x (worst case
+    0.11x) of its global-baseline value, while the myogenic band moved only
+    4.5%.
+
+    Returns a list of human-readable warnings; empty means the window is
+    safe for the requested bands.
+    """
+    warnings: list[str] = []
+    if window_seconds <= 0:
+        return [f"Rolling baseline window must be > 0 s, got {window_seconds}."]
+
+    duration_sec = n_samples / fs if fs > 0 else float("inf")
+    if window_seconds >= duration_sec:
+        warnings.append(
+            f"Rolling baseline window ({window_seconds:g} s) is at least as long as the "
+            f"recording ({duration_sec:.1f} s), so the rolling median is effectively the "
+            "global median and this behaves the same as dx_x0_median."
+        )
+
+    if bands:
+        lowest_edge = min(float(low) for low, _high in bands.values())
+        if lowest_edge > 0:
+            required_sec = 1.0 / lowest_edge
+            if window_seconds < required_sec:
+                warnings.append(
+                    f"Rolling baseline window ({window_seconds:g} s) is shorter than the "
+                    f"longest period you are measuring ({required_sec:.0f} s, from the "
+                    f"{lowest_edge:g} Hz band edge). Subtracting a rolling median removes "
+                    f"fluctuations slower than the window, so power below "
+                    f"{1.0 / window_seconds:.4f} Hz will be suppressed -- the baseline "
+                    "absorbs the signal you are trying to measure. Use a window of at "
+                    f"least {required_sec:.0f} s, or use dx_x0_median instead."
+                )
+    return warnings
+
+
+def normalize_signal(
+    values: np.ndarray,
+    method: str,
+    fs: float | None = None,
+    rolling_window_seconds: float = DEFAULT_ROLLING_WINDOW_SEC,
+) -> np.ndarray:
     """Normalise a trace. 'dx_x0_median'/'dx_x0_mean' compute (x - x0) / x0
-    with x0 the trace median/mean; 'zscore' computes (x - mean) / std."""
+    with x0 the trace median/mean; 'zscore' computes (x - mean) / std;
+    'dx_x0_rolling' computes (x - m(t)) / m(t) against a centred rolling
+    median m(t), i.e. a local rather than a whole-trace baseline.
+
+    `fs` is required only for 'dx_x0_rolling' (the window is specified in
+    seconds, so samples cannot be derived without it) and is ignored by
+    every other method, which keeps the existing three-argument call sites
+    working unchanged.
+    """
     x = np.asarray(values, dtype=float)
     if method == "none":
         return x
@@ -59,6 +167,11 @@ def normalize_signal(values: np.ndarray, method: str) -> np.ndarray:
         return (x - x0) / x0
     if method == "zscore":
         return (x - np.mean(x)) / np.std(x, ddof=1)
+    if method == "dx_x0_rolling":
+        if fs is None:
+            raise ValueError("fs is required for normalize method 'dx_x0_rolling'")
+        baseline = rolling_baseline(x, fs, rolling_window_seconds)
+        return (x - baseline) / baseline
     raise ValueError(f"normalize method must be one of {NORMALIZE_METHODS}, got {method!r}")
 
 
@@ -125,6 +238,7 @@ def preprocess_stages(
     highpass_cutoff: float | None = 0.005,
     highpass_order: int = 4,
     trim_seconds: float = 0.0,
+    rolling_window_seconds: float = DEFAULT_ROLLING_WINDOW_SEC,
 ) -> dict[str, np.ndarray]:
     """Every intermediate trace of the Stage 1 chain, keyed by stage name:
     'trimmed', 'converted', 'normalized', 'filtered', 'analyzed'.
@@ -137,7 +251,9 @@ def preprocess_stages(
     """
     trimmed = trim_signal(values, fs, trim_seconds)
     converted = area_to_diameter(trimmed, signal_type)
-    normalized = normalize_signal(converted, normalize)
+    normalized = normalize_signal(
+        converted, normalize, fs=fs, rolling_window_seconds=rolling_window_seconds
+    )
     filtered = highpass_filter(normalized, fs, highpass_cutoff, highpass_order)
     analyzed = detrend_signal(filtered, detrend_method)
     return {
@@ -158,6 +274,7 @@ def preprocess_signal(
     highpass_cutoff: float | None = 0.005,
     highpass_order: int = 4,
     trim_seconds: float = 0.0,
+    rolling_window_seconds: float = DEFAULT_ROLLING_WINDOW_SEC,
 ) -> np.ndarray:
     """Apply the full Stage 1 pipeline to one animal's raw trace, in order:
     trim, signal-type conversion, normalise, high-pass, detrend."""
@@ -165,6 +282,7 @@ def preprocess_signal(
         values, fs=fs, signal_type=signal_type, normalize=normalize,
         detrend_method=detrend_method, highpass_cutoff=highpass_cutoff,
         highpass_order=highpass_order, trim_seconds=trim_seconds,
+        rolling_window_seconds=rolling_window_seconds,
     )["analyzed"]
 
 
@@ -214,6 +332,7 @@ def preprocess_long_dataframe(
     highpass_cutoff: float | None = 0.005,
     highpass_order: int = 4,
     trim_seconds: float = 0.0,
+    rolling_window_seconds: float = DEFAULT_ROLLING_WINDOW_SEC,
 ) -> pd.DataFrame:
     """Apply preprocess_signal to every (animal, region, condition) group in a
     tidy long dataframe (as produced by io_excel.load_workbook_long).
@@ -234,6 +353,7 @@ def preprocess_long_dataframe(
             highpass_cutoff=highpass_cutoff,
             highpass_order=highpass_order,
             trim_seconds=trim_seconds,
+            rolling_window_seconds=rolling_window_seconds,
         )
         for i, value in enumerate(processed, start=1):
             out_rows.append(
@@ -269,6 +389,7 @@ def trace_stats_table(
     highpass_cutoff: float | None = 0.005,
     highpass_order: int = 4,
     trim_seconds: float = 0.0,
+    rolling_window_seconds: float = DEFAULT_ROLLING_WINDOW_SEC,
 ) -> pd.DataFrame:
     """Per-trace amplitude statistics, one row per (animal, sex, region,
     condition) group, for export alongside the PSD and band tables.
@@ -325,6 +446,7 @@ def trace_stats_table(
             highpass_cutoff=highpass_cutoff,
             highpass_order=highpass_order,
             trim_seconds=trim_seconds,
+            rolling_window_seconds=rolling_window_seconds,
         )
         converted = stages["converted"]
         out_rows.append(
