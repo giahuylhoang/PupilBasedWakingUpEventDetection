@@ -1,7 +1,220 @@
 {
  "directed": false,
  "graph": {},
- "links": [],
+ "links": [
+  {
+   "confidence": "EXTRACTED",
+   "confidence_score": 1.0,
+   "relation": "touched",
+   "source": "baton_xvf66o",
+   "source_file": ".baton/notes/2026/10/2026-10-29-kiro-gia-huy-dilation-deep-dive-30-pupil-curves-ne-su-xvf66o.md",
+   "source_location": "L1",
+   "target": "agents_rules_baton",
+   "weight": 1.0
+  },
+  {
+   "confidence": "EXTRACTED",
+   "confidence_score": 1.0,
+   "relation": "contains",
+   "source": "baton_xvf66o",
+   "source_file": ".baton/notes/2026/10/2026-10-29-kiro-gia-huy-dilation-deep-dive-30-pupil-curves-ne-su-xvf66o.md",
+   "source_location": "L31",
+   "target": "baton_xvf66o_d1",
+   "weight": 1.0
+  },
+  {
+   "confidence": "EXTRACTED",
+   "confidence_score": 1.0,
+   "relation": "contains",
+   "source": "baton_xvf66o",
+   "source_file": ".baton/notes/2026/10/2026-10-29-kiro-gia-huy-dilation-deep-dive-30-pupil-curves-ne-su-xvf66o.md",
+   "source_location": "L32",
+   "target": "baton_xvf66o_d2",
+   "weight": 1.0
+  },
+  {
+   "confidence": "EXTRACTED",
+   "confidence_score": 1.0,
+   "relation": "contains",
+   "source": "baton_xvf66o",
+   "source_file": ".baton/notes/2026/10/2026-10-29-kiro-gia-huy-dilation-deep-dive-30-pupil-curves-ne-su-xvf66o.md",
+   "source_location": "L33",
+   "target": "baton_xvf66o_d3",
+   "weight": 1.0
+  },
+  {
+   "confidence": "EXTRACTED",
+   "confidence_score": 1.0,
+   "relation": "contains",
+   "source": "baton_xvf66o",
+   "source_file": ".baton/notes/2026/10/2026-10-29-kiro-gia-huy-dilation-deep-dive-30-pupil-curves-ne-su-xvf66o.md",
+   "source_location": "L34",
+   "target": "baton_xvf66o_d4",
+   "weight": 1.0
+  },
+  {
+   "confidence": "EXTRACTED",
+   "confidence_score": 1.0,
+   "relation": "contains",
+   "source": "baton_xvf66o",
+   "source_file": ".baton/notes/2026/10/2026-10-29-kiro-gia-huy-dilation-deep-dive-30-pupil-curves-ne-su-xvf66o.md",
+   "source_location": "L37",
+   "target": "baton_xvf66o_t1",
+   "weight": 1.0
+  },
+  {
+   "confidence": "EXTRACTED",
+   "confidence_score": 1.0,
+   "relation": "contains",
+   "source": "baton_xvf66o",
+   "source_file": ".baton/notes/2026/10/2026-10-29-kiro-gia-huy-dilation-deep-dive-30-pupil-curves-ne-su-xvf66o.md",
+   "source_location": "L38",
+   "target": "baton_xvf66o_t2",
+   "weight": 1.0
+  },
+  {
+   "confidence": "EXTRACTED",
+   "confidence_score": 1.0,
+   "relation": "touched",
+   "source": "baton_xvf66o",
+   "source_file": ".baton/notes/2026/10/2026-10-29-kiro-gia-huy-dilation-deep-dive-30-pupil-curves-ne-su-xvf66o.md",
+   "source_location": "L1",
+   "target": "emails_2026_10_24_reply_tim_vessel_sex",
+   "weight": 1.0
+  },
+  {
+   "confidence": "EXTRACTED",
+   "confidence_score": 1.0,
+   "relation": "touched",
+   "source": "baton_xvf66o",
+   "source_file": ".baton/notes/2026/10/2026-10-29-kiro-gia-huy-dilation-deep-dive-30-pupil-curves-ne-su-xvf66o.md",
+   "source_location": "L1",
+   "target": "kiro_steering_baton",
+   "weight": 1.0
+  },
+  {
+   "confidence": "EXTRACTED",
+   "confidence_score": 1.0,
+   "relation": "touched",
+   "source": "baton_xvf66o",
+   "source_file": ".baton/notes/2026/10/2026-10-29-kiro-gia-huy-dilation-deep-dive-30-pupil-curves-ne-su-xvf66o.md",
+   "source_location": "L1",
+   "target": "scripts_deck_2026_10_26_v3",
+   "weight": 1.0
+  },
+  {
+   "confidence": "EXTRACTED",
+   "confidence_score": 1.0,
+   "relation": "touched",
+   "source": "baton_xvf66o",
+   "source_file": ".baton/notes/2026/10/2026-10-29-kiro-gia-huy-dilation-deep-dive-30-pupil-curves-ne-su-xvf66o.md",
+   "source_location": "L1",
+   "target": "scripts_florence_eye_position_to_site",
+   "weight": 1.0
+  },
+  {
+   "confidence": "EXTRACTED",
+   "confidence_score": 1.0,
+   "relation": "touched",
+   "source": "baton_xvf66o",
+   "source_file": ".baton/notes/2026/10/2026-10-29-kiro-gia-huy-dilation-deep-dive-30-pupil-curves-ne-su-xvf66o.md",
+   "source_location": "L1",
+   "target": "scripts_meeting_2026_10_26_r",
+   "weight": 1.0
+  }
+ ],
  "multigraph": false,
- "nodes": []
+ "nodes": [
+  {
+   "file_type": "document",
+   "id": "agents_rules_baton",
+   "label": "baton.md",
+   "source_file": ".agents/rules/baton.md",
+   "source_location": "L1"
+  },
+  {
+   "file_type": "document",
+   "id": "baton_xvf66o",
+   "label": "Dilation deep dive, 30% pupil curves, NE summaries, new NE/eye-motion uploads and a site load fix",
+   "source_file": ".baton/notes/2026/10/2026-10-29-kiro-gia-huy-dilation-deep-dive-30-pupil-curves-ne-su-xvf66o.md",
+   "source_location": "L1"
+  },
+  {
+   "file_type": "rationale",
+   "id": "baton_xvf66o_d1",
+   "label": "The annotator's \"pupil moving speed\" columns are vertical pupil-centre position (px, 50 Hz); converted to speed as |d position|/frame after a 10 Hz low-pass, as in pupil_eye_motion.py. Confirmed by the annotator.",
+   "source_file": ".baton/notes/2026/10/2026-10-29-kiro-gia-huy-dilation-deep-dive-30-pupil-curves-ne-su-xvf66o.md",
+   "source_location": "L31"
+  },
+  {
+   "file_type": "rationale",
+   "id": "baton_xvf66o_d2",
+   "label": "Sheet date/cycle fixes, confirmed by the annotator: \"2024.06.01\" in the scramble sheet = scramble 2025.06.01; scramble 2024.05.05 columns labelled 11-14 = cycles 10-13; the \"Gcmap8m\" sheet is RSC 2023.07.12, columns E-G = cycles 6-8.",
+   "source_file": ".baton/notes/2026/10/2026-10-29-kiro-gia-huy-dilation-deep-dive-30-pupil-curves-ne-su-xvf66o.md",
+   "source_location": "L32"
+  },
+  {
+   "file_type": "rationale",
+   "id": "baton_xvf66o_d3",
+   "label": "NE 2026.03.10 keeps its DLC eye motion; the annotator's position columns for that day were not uploaded.",
+   "source_file": ".baton/notes/2026/10/2026-10-29-kiro-gia-huy-dilation-deep-dive-30-pupil-curves-ne-su-xvf66o.md",
+   "source_location": "L33"
+  },
+  {
+   "file_type": "rationale",
+   "id": "baton_xvf66o_d4",
+   "label": "5-s eye-motion bins must never contain NaN motion_sum: the labeling server passes it to JSON and browsers reject NaN, so the cycle never loads. Empty bins are written as 0.",
+   "source_file": ".baton/notes/2026/10/2026-10-29-kiro-gia-huy-dilation-deep-dive-30-pupil-curves-ne-su-xvf66o.md",
+   "source_location": "L34"
+  },
+  {
+   "file_type": "concept",
+   "id": "baton_xvf66o_t1",
+   "label": "NE 2026.05.10 NE values are ~2.8 vs ~1000 on other days (different export?); 05.08 c15 vessel jumps at ~80 s (possible ROI shift). Not yet answered.",
+   "source_file": ".baton/notes/2026/10/2026-10-29-kiro-gia-huy-dilation-deep-dive-30-pupil-curves-ne-su-xvf66o.md",
+   "source_location": "L37"
+  },
+  {
+   "file_type": "concept",
+   "id": "baton_xvf66o_t2",
+   "label": "Labelling server itself still emits NaN for missing bin values; a server-side guard would prevent this for any future file.",
+   "source_file": ".baton/notes/2026/10/2026-10-29-kiro-gia-huy-dilation-deep-dive-30-pupil-curves-ne-su-xvf66o.md",
+   "source_location": "L38"
+  },
+  {
+   "file_type": "document",
+   "id": "emails_2026_10_24_reply_tim_vessel_sex",
+   "label": "2026-10-24-reply-tim-vessel-sex.md",
+   "source_file": "emails/2026-10-24-reply-tim-vessel-sex.md",
+   "source_location": "L1"
+  },
+  {
+   "file_type": "document",
+   "id": "kiro_steering_baton",
+   "label": "baton.md",
+   "source_file": ".kiro/steering/baton.md",
+   "source_location": "L1"
+  },
+  {
+   "file_type": "code",
+   "id": "scripts_deck_2026_10_26_v3",
+   "label": "deck_2026_10_26_v3.py",
+   "source_file": "scripts/deck_2026_10_26_v3.py",
+   "source_location": "L1"
+  },
+  {
+   "file_type": "code",
+   "id": "scripts_florence_eye_position_to_site",
+   "label": "florence_eye_position_to_site.py",
+   "source_file": "scripts/florence_eye_position_to_site.py",
+   "source_location": "L1"
+  },
+  {
+   "file_type": "code",
+   "id": "scripts_meeting_2026_10_26_r",
+   "label": "meeting_2026_10_26_r.py",
+   "source_file": "scripts/meeting_2026_10_26_r.py",
+   "source_location": "L1"
+  }
+ ]
 }
